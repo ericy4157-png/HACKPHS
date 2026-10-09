@@ -65,12 +65,12 @@ export function findRoute({ origin, destination, policy = {} }) {
   return { waypoints, zonesAvoided: crossedZones(origin, destination, forbidden).map((z) => z.id), distanceNm: Math.round(costs[1]) };
 }
 
-export function diversionOptions(position, aircraft, closedAirports = []) {
+export function diversionOptions(position, aircraft, closedAirports = [], intendedDestination) {
   const minimumRunway = aircraft?.includes("A350") || aircraft?.includes("B787") ? 8500 : 6000;
   return airports.filter((airport) => airport.status === "open" && !closedAirports.includes(airport.icao) && airport.runwayFt >= minimumRunway)
-    .map((airport) => ({ ...airport, distanceNm: Math.round(distanceNm(position, airport)) }))
+    .map((airport) => ({ ...airport, distanceNm: Math.round(distanceNm(position, airport)), passengerRecoveryNm: intendedDestination ? Math.round(distanceNm(airport, intendedDestination)) : 0 }))
     .filter((airport) => crossedZones(position, airport, restrictedZones.filter((z) => z.severity === "prohibited")).length === 0)
-    .sort((a, b) => a.distanceNm - b.distanceNm).slice(0, 3);
+    .sort((a, b) => (a.distanceNm + 1.5 * a.passengerRecoveryNm) - (b.distanceNm + 1.5 * b.passengerRecoveryNm)).slice(0, 3);
 }
 
 export function planReroute({ flight, destination, closedAirports = [], policy = {} }) {
@@ -80,7 +80,7 @@ export function planReroute({ flight, destination, closedAirports = [], policy =
   const directNm = distanceNm(origin, target);
   const route = findRoute({ origin, destination: target, policy });
   const extraMinutes = Math.round(Math.max(0, route.distanceNm - directNm) / 8.2); // 492 kt cruise approximation
-  const alternates = diversionOptions(origin, flight.aircraft, closedAirports);
+  const alternates = diversionOptions(origin, flight.aircraft, closedAirports, target);
   const fuelMargin = flight.fuelMinutes - Math.round(route.distanceNm / 8.2) - 45;
   return {
     flightId: flight.id, destination: target.icao, route, alternates,

@@ -2,8 +2,11 @@ import http from "node:http";
 import { readFile } from "node:fs/promises";
 import { airports, flights, restrictedZones } from "./data.js";
 import { planReroute } from "./routing.js";
+import { operationalNetwork, pullOpenSkyStates } from "./network.js";
+import { simulateDisaster } from "./simulation.js";
 
 const incidents = [];
+const approvalQueue = [];
 const send = (res, status, body) => { res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(JSON.stringify(body)); };
 const readJson = async (req) => new Promise((resolve, reject) => { let body = ""; req.on("data", (chunk) => body += chunk); req.on("end", () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); } }); });
 
@@ -18,8 +21,16 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/health") return send(res, 200, { status: "ok", service: "skyward-ops-api", now: new Date().toISOString() });
     if (req.method === "GET" && url.pathname === "/v1/airports") return send(res, 200, { airports });
     if (req.method === "GET" && url.pathname === "/v1/flights") return send(res, 200, { flights });
+    if (req.method === "GET" && url.pathname === "/v1/network") return send(res, 200, operationalNetwork());
+    if (req.method === "GET" && url.pathname === "/v1/integrations/opensky/states") return send(res, 200, await pullOpenSkyStates());
     if (req.method === "GET" && url.pathname === "/v1/airspace/restrictions") return send(res, 200, { restrictions: restrictedZones });
     if (req.method === "GET" && url.pathname === "/v1/incidents") return send(res, 200, { incidents });
+    if (req.method === "GET" && url.pathname === "/v1/disruption-plans") return send(res, 200, { plans: approvalQueue });
+    if (req.method === "POST" && url.pathname === "/v1/simulations/disaster") {
+      const simulation = simulateDisaster(await readJson(req));
+      approvalQueue.unshift(...simulation.plans);
+      return send(res, 201, simulation);
+    }
     if (req.method === "POST" && url.pathname === "/v1/incidents") {
       const incident = await readJson(req);
       if (!incident.airport || !incident.type) return send(res, 400, { error: "airport and type are required" });
@@ -27,7 +38,19 @@ const server = http.createServer(async (req, res) => {
       if (!airport) return send(res, 404, { error: "Unknown airport" });
       if (incident.type === "airport_closed") airport.status = "closed";
       const stored = { id: `INC-${Date.now()}`, createdAt: new Date().toISOString(), active: true, ...incident };
-      incidents.unshift(stored); return send(res, 201, { incident: stored });
+      incidents.unshift(stored);
+      // This is the live-style workflow: create approval items automatically, but never execute them.
+      const pipeline = incident.type === "airport_closed" ? simulateDisaster({ airport: incident.airport, radiusNm: 1, severity: incident.severity || "moderate", type: incident.reason || "airport closure" }) : null;
+      if (pipeline) approvalQueue.unshift(...pipeline.plans);
+      return send(res, 201, { incident: stored, generatedApprovalPlans: pipeline?.plans.length || 0 });
+    }
+    const approvalMatch = url.pathname.match(/^\/v1\/disruption-plans\/([^/]+)\/approve$/);
+    if (req.method === "POST" && approvalMatch) {
+      const plan = approvalQueue.find((item) => item.id === decodeURIComponent(approvalMatch[1]));
+      if (!plan) return send(res, 404, { error: "Unknown disruption plan" });
+      const input = await readJson(req);
+      plan.approvalStatus = "approved"; plan.approvedAt = new Date().toISOString(); plan.approvedBy = input.approvedBy || "unattributed-operator";
+      return send(res, 200, { plan, notice: "Approval recorded only; external dispatch/ATC execution is intentionally not automated." });
     }
     const match = url.pathname.match(/^\/v1\/flights\/([^/]+)\/reroute$/);
     if (req.method === "POST" && match) {

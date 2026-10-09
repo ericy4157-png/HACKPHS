@@ -27,7 +27,26 @@ export const restrictedZones = [
 ];
 
 export const flights = [
-  { id: "SKY101", callsign: "SKY101", origin: "KJFK", destination: "EGLL", position: { lat: 48.1, lon: -38.4 }, passengers: 284, aircraft: "A350-900", fuelMinutes: 315, status: "airborne" },
-  { id: "SKY204", callsign: "SKY204", origin: "EGLL", destination: "OMDB", position: { lat: 43.4, lon: 20.1 }, passengers: 231, aircraft: "B787-9", fuelMinutes: 380, status: "airborne" },
-  { id: "SKY305", callsign: "SKY305", origin: "KORD", destination: "KLAX", position: { lat: 41.0, lon: -96.0 }, passengers: 178, aircraft: "A321neo", fuelMinutes: 205, status: "airborne" }
+  { id: "SKY101", callsign: "SKY101", origin: "KJFK", destination: "EGLL", position: { lat: 48.1, lon: -38.4 }, passengers: 284, aircraft: "A350-900", aircraftId: "N901SK", fuelMinutes: 315, status: "airborne", scheduledOffsetMinutes: -170 },
+  { id: "SKY204", callsign: "SKY204", origin: "EGLL", destination: "OMDB", position: { lat: 43.4, lon: 20.1 }, passengers: 231, aircraft: "B787-9", aircraftId: "N902SK", fuelMinutes: 380, status: "airborne", scheduledOffsetMinutes: -245 },
+  { id: "SKY305", callsign: "SKY305", origin: "KORD", destination: "KLAX", position: { lat: 41.0, lon: -96.0 }, passengers: 178, aircraft: "A321neo", aircraftId: "N903SK", fuelMinutes: 205, status: "airborne", scheduledOffsetMinutes: -105 },
+  { id: "SKY118", callsign: "SKY118", origin: "EGLL", destination: "KJFK", passengers: 287, aircraft: "A350-900", aircraftId: "N904SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 85 },
+  { id: "SKY219", callsign: "SKY219", origin: "OMDB", destination: "EGLL", passengers: 244, aircraft: "B787-9", aircraftId: "N902SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 190 },
+  { id: "SKY311", callsign: "SKY311", origin: "KLAX", destination: "KORD", passengers: 181, aircraft: "A321neo", aircraftId: "N903SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 155 },
+  { id: "SKY412", callsign: "SKY412", origin: "KSEA", destination: "KSFO", passengers: 151, aircraft: "A320neo", aircraftId: "N905SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 45 },
+  { id: "SKY413", callsign: "SKY413", origin: "KSFO", destination: "KSEA", passengers: 149, aircraft: "A320neo", aircraftId: "N905SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 190 },
+  { id: "SKY512", callsign: "SKY512", origin: "LFPG", destination: "LTFM", passengers: 168, aircraft: "A321neo", aircraftId: "N906SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 70 },
+  { id: "SKY513", callsign: "SKY513", origin: "LTFM", destination: "LFPG", passengers: 166, aircraft: "A321neo", aircraftId: "N906SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 225 },
+  { id: "SKY610", callsign: "SKY610", origin: "KDEN", destination: "KJFK", passengers: 175, aircraft: "B737-8", aircraftId: "N907SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 120 },
+  { id: "SKY611", callsign: "SKY611", origin: "KJFK", destination: "KDEN", passengers: 171, aircraft: "B737-8", aircraftId: "N907SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 325 }
+];
+
+export const fleet = [
+  { id: "N901SK", type: "A350-900", location: "EGLL", maintenanceDueInHours: 42, minimumTurnMinutes: 105 },
+  { id: "N902SK", type: "B787-9", location: "EGLL", maintenanceDueInHours: 11, minimumTurnMinutes: 95 },
+  { id: "N903SK", type: "A321neo", location: "KORD", maintenanceDueInHours: 27, minimumTurnMinutes: 55 },
+  { id: "N904SK", type: "A350-900", location: "EGLL", maintenanceDueInHours: 64, minimumTurnMinutes: 105 },
+  { id: "N905SK", type: "A320neo", location: "KSEA", maintenanceDueInHours: 19, minimumTurnMinutes: 50 },
+  { id: "N906SK", type: "A321neo", location: "LFPG", maintenanceDueInHours: 6, minimumTurnMinutes: 55 },
+  { id: "N907SK", type: "B737-8", location: "KDEN", maintenanceDueInHours: 31, minimumTurnMinutes: 50 }
 ];
