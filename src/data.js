@@ -14,7 +14,23 @@ export const airports = [
   { icao: "OMDB", name: "Dubai International", city: "Dubai", lat: 25.2532, lon: 55.3657, runwayFt: 13124, status: "open" },
   { icao: "VABB", name: "Mumbai International", city: "Mumbai", lat: 19.0896, lon: 72.8656, runwayFt: 11300, status: "open" },
   { icao: "WSSS", name: "Singapore Changi", city: "Singapore", lat: 1.3644, lon: 103.9915, runwayFt: 13123, status: "open" },
-  { icao: "RJTT", name: "Tokyo Haneda", city: "Tokyo", lat: 35.5494, lon: 139.7798, runwayFt: 11000, status: "open" }
+  { icao: "RJTT", name: "Tokyo Haneda", city: "Tokyo", lat: 35.5494, lon: 139.7798, runwayFt: 11000, status: "open" },
+  { icao: "KATL", name: "Hartsfield-Jackson Atlanta", city: "Atlanta", lat: 33.6407, lon: -84.4277, runwayFt: 12390, status: "open" },
+  { icao: "KDFW", name: "Dallas Fort Worth International", city: "Dallas", lat: 32.8998, lon: -97.0403, runwayFt: 13401, status: "open" },
+  { icao: "KMIA", name: "Miami International", city: "Miami", lat: 25.7959, lon: -80.2870, runwayFt: 13016, status: "open" },
+  { icao: "CYYZ", name: "Toronto Pearson International", city: "Toronto", lat: 43.6777, lon: -79.6248, runwayFt: 11000, status: "open" },
+  { icao: "MMMX", name: "Mexico City International", city: "Mexico City", lat: 19.4361, lon: -99.0719, runwayFt: 12800, status: "open" },
+  { icao: "SBGR", name: "São Paulo/Guarulhos", city: "São Paulo", lat: -23.4356, lon: -46.4731, runwayFt: 12139, status: "open" },
+  { icao: "EHAM", name: "Amsterdam Schiphol", city: "Amsterdam", lat: 52.3105, lon: 4.7683, runwayFt: 12467, status: "open" },
+  { icao: "LEMD", name: "Adolfo Suárez Madrid-Barajas", city: "Madrid", lat: 40.4983, lon: -3.5676, runwayFt: 14327, status: "open" },
+  { icao: "LIRF", name: "Rome Fiumicino", city: "Rome", lat: 41.8003, lon: 12.2389, runwayFt: 12795, status: "open" },
+  { icao: "FAOR", name: "O. R. Tambo International", city: "Johannesburg", lat: -26.1337, lon: 28.2420, runwayFt: 14495, status: "open" },
+  { icao: "HECA", name: "Cairo International", city: "Cairo", lat: 30.1219, lon: 31.4056, runwayFt: 13123, status: "open" },
+  { icao: "VIDP", name: "Delhi Indira Gandhi International", city: "Delhi", lat: 28.5562, lon: 77.1000, runwayFt: 14534, status: "open" },
+  { icao: "VTBS", name: "Bangkok Suvarnabhumi", city: "Bangkok", lat: 13.6900, lon: 100.7501, runwayFt: 13123, status: "open" },
+  { icao: "VHHH", name: "Hong Kong International", city: "Hong Kong", lat: 22.3080, lon: 113.9185, runwayFt: 12467, status: "open" },
+  { icao: "RKSI", name: "Seoul Incheon International", city: "Seoul", lat: 37.4602, lon: 126.4407, runwayFt: 12303, status: "open" },
+  { icao: "YSSY", name: "Sydney Kingsford Smith", city: "Sydney", lat: -33.9399, lon: 151.1753, runwayFt: 12999, status: "open" }
 ];
 
 // Simplified operational polygons for demonstration only. Production use requires
@@ -38,7 +54,10 @@ export const flights = [
   { id: "SKY512", callsign: "SKY512", origin: "LFPG", destination: "LTFM", passengers: 168, aircraft: "A321neo", aircraftId: "N906SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 70 },
   { id: "SKY513", callsign: "SKY513", origin: "LTFM", destination: "LFPG", passengers: 166, aircraft: "A321neo", aircraftId: "N906SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 225 },
   { id: "SKY610", callsign: "SKY610", origin: "KDEN", destination: "KJFK", passengers: 175, aircraft: "B737-8", aircraftId: "N907SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 120 },
-  { id: "SKY611", callsign: "SKY611", origin: "KJFK", destination: "KDEN", passengers: 171, aircraft: "B737-8", aircraftId: "N907SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 325 }
+  { id: "SKY611", callsign: "SKY611", origin: "KJFK", destination: "KDEN", passengers: 171, aircraft: "B737-8", aircraftId: "N907SK", fuelMinutes: 0, status: "scheduled", scheduledOffsetMinutes: 325 },
+  { id: "SKY820", callsign: "SKY820", origin: "KDFW", destination: "KMIA", position: { lat: 29.3, lon: -87.2 }, passengers: 176, aircraft: "A321neo", aircraftId: "N903SK", fuelMinutes: 180, status: "airborne", scheduledOffsetMinutes: -95 },
+  { id: "SKY821", callsign: "SKY821", origin: "VHHH", destination: "RJTT", position: { lat: 30.1, lon: 125.4 }, passengers: 242, aircraft: "B787-9", aircraftId: "N902SK", fuelMinutes: 260, status: "airborne", scheduledOffsetMinutes: -135 },
+  { id: "SKY822", callsign: "SKY822", origin: "LFPG", destination: "LIRF", position: { lat: 43.1, lon: 8.3 }, passengers: 169, aircraft: "A321neo", aircraftId: "N906SK", fuelMinutes: 130, status: "airborne", scheduledOffsetMinutes: -65 }
 ];
 
 export const fleet = [
@@ -50,3 +69,16 @@ export const fleet = [
   { id: "N906SK", type: "A321neo", location: "LFPG", maintenanceDueInHours: 6, minimumTurnMinutes: 55 },
   { id: "N907SK", type: "B737-8", location: "KDEN", maintenanceDueInHours: 31, minimumTurnMinutes: 50 }
 ];
+
+// Synthetic schedule coverage makes the demo deterministic while providing every
+// airport in this test network with at least one movement to analyze.
+const syntheticRoutes = [
+  ["KATL", "KJFK"], ["KDFW", "KLAX"], ["KMIA", "KATL"], ["CYYZ", "KORD"], ["MMMX", "KDFW"], ["SBGR", "KMIA"],
+  ["EHAM", "EGLL"], ["LEMD", "LFPG"], ["LIRF", "EDDF"], ["FAOR", "OMDB"], ["HECA", "LTFM"], ["VIDP", "OMDB"],
+  ["VTBS", "WSSS"], ["VHHH", "RJTT"], ["RKSI", "RJTT"], ["YSSY", "WSSS"], ["KJFK", "CYYZ"], ["EGLL", "EHAM"]
+];
+flights.push(...syntheticRoutes.map(([origin, destination], index) => ({
+  id: `SKY${700 + index}`, callsign: `SKY${700 + index}`, origin, destination, passengers: 112 + (index * 13 % 165),
+  aircraft: index % 3 === 0 ? "B787-9" : "A321neo", aircraftId: `N${901 + index % 7}SK`, fuelMinutes: 0,
+  status: "scheduled", scheduledOffsetMinutes: 55 + index * 28
+})));

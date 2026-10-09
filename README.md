@@ -11,7 +11,7 @@ npm run dev
 
 The API runs at `http://localhost:3000` with no external dependencies.
 
-Open `http://localhost:3000` to use the included Ops Test Console. It is an intentionally minimal end-to-end harness; your teammate can replace it with the final product UI while keeping the same API contract.
+Open `http://localhost:3000` to use the included zero-input operational dashboard. It evaluates a synthetic network of 32 major airports automatically; **Refresh operational picture** advances the benchmark dataset to its next seeded disruption scenario and regenerates the review queue. Your teammate can replace the visual layer while keeping the API contract.
 
 ## Demo flow
 
@@ -27,6 +27,8 @@ The reroute response includes route waypoints, restricted zones avoided, compati
 - `GET /v1/airports`
 - `GET /v1/flights`
 - `GET /v1/network` — seeded network: flights, aircraft rotations and airports
+- `GET /v1/dashboard` — active synthetic test-run picture
+- `POST /v1/dashboard/refresh` — advance to the next synthetic disruption scenario
 - `GET /v1/integrations/opensky/states` — optional live ADS-B enrichment via OpenSky
 - `GET /v1/airspace/restrictions`
 - `GET /v1/incidents`

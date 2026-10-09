@@ -4,9 +4,12 @@ import { airports, flights, restrictedZones } from "./data.js";
 import { planReroute } from "./routing.js";
 import { operationalNetwork, pullOpenSkyStates } from "./network.js";
 import { simulateDisaster } from "./simulation.js";
+import { buildOperationalSnapshot } from "./scenarios.js";
 
 const incidents = [];
 const approvalQueue = [];
+let refreshNumber = 0;
+let operationalSnapshot = buildOperationalSnapshot(refreshNumber);
 const send = (res, status, body) => { res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(JSON.stringify(body)); };
 const readJson = async (req) => new Promise((resolve, reject) => { let body = ""; req.on("data", (chunk) => body += chunk); req.on("end", () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); } }); });
 
@@ -22,6 +25,13 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/v1/airports") return send(res, 200, { airports });
     if (req.method === "GET" && url.pathname === "/v1/flights") return send(res, 200, { flights });
     if (req.method === "GET" && url.pathname === "/v1/network") return send(res, 200, operationalNetwork());
+    if (req.method === "GET" && url.pathname === "/v1/dashboard") return send(res, 200, operationalSnapshot);
+    if (req.method === "POST" && url.pathname === "/v1/dashboard/refresh") {
+      refreshNumber += 1;
+      operationalSnapshot = buildOperationalSnapshot(refreshNumber);
+      approvalQueue.length = 0; approvalQueue.push(...operationalSnapshot.plans);
+      return send(res, 200, operationalSnapshot);
+    }
     if (req.method === "GET" && url.pathname === "/v1/integrations/opensky/states") return send(res, 200, await pullOpenSkyStates());
     if (req.method === "GET" && url.pathname === "/v1/airspace/restrictions") return send(res, 200, { restrictions: restrictedZones });
     if (req.method === "GET" && url.pathname === "/v1/incidents") return send(res, 200, { incidents });
