@@ -9,6 +9,8 @@ type Props = {
   selectedId: string | null;
   onSelect: (flightId: string | null) => void;
   mode: SkyMode;
+  /** Where to frame the camera when the incident changes; defaults to CONUS. */
+  focus: { lat: number; lng: number } | null;
 };
 
 const EARTH_DAY = "//cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg";
@@ -88,16 +90,22 @@ function buildPoints(flights: Flight[], selectedId: string | null): PointDatum[]
 }
 
 function affectedAirports(flights: Flight[]): Airport[] {
-  const codes = new Set<string>();
+  const byCode = new Map<string, Airport>();
   for (const f of flights) {
     if (f.status === "ok") continue;
-    codes.add(f.origin);
-    codes.add(f.destination);
+    for (const view of [f.originAirport, f.destinationAirport]) {
+      if (view) byCode.set(view.code, { iata: view.code, name: view.name, city: view.city, lat: view.lat, lng: view.lng });
+    }
+    // Mock flights carry only codes; resolve them from the local US airport list.
+    for (const code of [f.origin, f.destination]) {
+      const known = AIRPORT_LIST.find((a) => a.iata === code);
+      if (!byCode.has(code) && known) byCode.set(code, known);
+    }
   }
-  return AIRPORT_LIST.filter((a) => codes.has(a.iata));
+  return [...byCode.values()];
 }
 
-export function GlobeView({ flights, selectedId, onSelect, mode }: Props) {
+export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -144,12 +152,13 @@ export function GlobeView({ flights, selectedId, onSelect, mode }: Props) {
     g.pointOfView({ lat: f.lat, lng: f.lng, altitude: 1.55 }, 1100);
   }, [selectedId, flights]);
 
+  const focusLat = focus?.lat ?? 38;
+  const focusLng = focus?.lng ?? -97;
   useEffect(() => {
     const g = globeRef.current;
     if (!g) return;
-    // Initial framing over CONUS
-    g.pointOfView({ lat: 38, lng: -97, altitude: 1.9 }, 0);
-  }, []);
+    g.pointOfView({ lat: focusLat, lng: focusLng, altitude: 1.9 }, 900);
+  }, [focusLat, focusLng]);
 
   return (
     <div className="globe-stage" ref={wrapRef}>

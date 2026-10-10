@@ -11,6 +11,8 @@ npm run dev
 
 The API runs at `http://localhost:3000` with no external dependencies.
 
+The main product UI is the 3D globe in [`UI/`](UI/README.md). With the API running, start it with `cd UI && npm install && npm run dev` and open `http://localhost:5173`; it proxies `/api` to this server.
+
 Open `http://localhost:3000` to use the included zero-input operational dashboard. It evaluates a synthetic network of 32 major airports automatically; **Refresh operational picture** advances the benchmark dataset to its next seeded disruption scenario and regenerates the review queue. Your teammate can replace the visual layer while keeping the API contract.
 
 ## Demo flow
@@ -37,6 +39,7 @@ The reroute response includes route waypoints, restricted zones avoided, compati
 - `GET /v1/disruption-plans`
 - `POST /v1/disruption-plans/:planId/approve`
 - `POST /v1/flights/:flightId/reroute`
+- `GET /api/incident`, `GET /api/flights`, `GET /api/flights/:id`, `POST /api/flights/:id/accept|reject`, `POST /api/scenario/next` — globe UI contract
 
 ## Safety boundary
 

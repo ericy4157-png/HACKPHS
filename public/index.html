@@ -1,10 +1,379 @@
 <!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Skyward | Network Operations</title><style>
-:root{color-scheme:dark;--ink:#edf3ff;--muted:#9ba9c1;--bg:#07101f;--panel:#101d32;--line:#283957;--cyan:#57e5ff;--amber:#ffd166;--red:#ff7890}*{box-sizing:border-box}body{margin:0;background:radial-gradient(circle at 92% 0,#173b70,transparent 31rem),var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}main{max-width:1240px;margin:auto;padding:34px 22px 64px}.eyebrow{color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}h1{font-size:32px;letter-spacing:-.05em;margin:2px 0 0}h1 span{color:var(--cyan)}p{color:var(--muted)}button{border:0;border-radius:8px;padding:11px 15px;background:var(--cyan);color:#031521;font:800 14px inherit;cursor:pointer}.status{margin:20px 0;padding:11px 13px;background:#13223a;border-left:3px solid var(--cyan);border-radius:5px;color:var(--muted)}.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}.card{background:rgba(16,29,50,.93);border:1px solid var(--line);border-radius:14px;padding:19px}.full{grid-column:1/-1}h2{margin:0 0 12px;font-size:16px}.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}.metric{background:#0a1528;border-radius:9px;padding:14px}.metric b{display:block;font-size:25px;color:var(--cyan)}.metric span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}.event{padding:10px 0;border-bottom:1px solid var(--line)}.event:last-child{border:0}.tag{color:var(--amber);font-size:11px;text-transform:uppercase;font-weight:800;letter-spacing:.05em}.airport{display:inline-block;margin:4px 4px 0 0;padding:5px 7px;border-radius:5px;background:#1a2943;color:#c8d8f7;font-size:12px}table{width:100%;border-collapse:collapse;font-size:12px}th{text-align:left;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}th,td{padding:10px 8px;border-bottom:1px solid var(--line)}.reroute{color:var(--cyan)}.cancel{color:var(--red)}.delay{color:var(--amber)}.pill{display:inline-block;padding:3px 7px;background:#23324f;border-radius:99px;font-size:11px}@media(max-width:720px){header{align-items:start;flex-direction:column}.grid{grid-template-columns:1fr}.metrics{grid-template-columns:1fr 1fr}.full{grid-column:auto}table{font-size:11px}}
-</style></head><body><main><header><div><div class="eyebrow">Synthetic network test run · human decision support</div><h1>Sky<span>ward</span> Operations</h1><p>Continuously evaluates a 32-airport network for new disruptions and recovery plans.</p></div><button id="refresh">Refresh operational picture</button></header><div class="status" id="status">Loading the current operational picture…</div><section class="grid"><div class="card full"><h2>Network impact</h2><div class="metrics" id="metrics"></div></div><div class="card"><h2 id="scenario">Active disruptions</h2><div id="events"></div></div><div class="card"><h2>Affected airports</h2><p id="airportCount">—</p><div id="airports"></div></div><div class="card full"><h2>Generated review queue</h2><p>Plans are suggestions only. A dispatcher/ATC operator must validate and approve every action.</p><table><thead><tr><th>Flight</th><th>Route</th><th>Passengers</th><th>Action</th><th>Recovery detail</th><th>Approval</th></tr></thead><tbody id="plans"></tbody></table></div></section></main><script>
-const $=id=>document.getElementById(id);let loading=false;
-async function request(path,options={}){const r=await fetch(path,{headers:{'content-type':'application/json'},...options});const body=await r.json();if(!r.ok)throw Error(body.error||'Request failed');return body}
-function actionDetail(plan){const p=plan.plan||{};return p.diversionAirport?`Divert to ${p.diversionAirport}; fuel, gate & handling review`:p.estimatedDelayMinutes?`${p.estimatedDelayMinutes} min delay; ${p.maintenance}`:p.reason||'Escalate for review'}
-function render(data){$('status').textContent=`Scenario ${data.refreshNumber+1}: ${data.scenario}. Refreshed ${new Date(data.refreshedAt).toLocaleTimeString()}. ${data.notice}`;$('scenario').textContent=`Active disruptions — ${data.scenario}`;const s=data.summary;$('metrics').innerHTML=`<div class="metric"><b>32</b><span>Airports analyzed</span></div><div class="metric"><b>${data.plans.length}</b><span>Plans requiring review</span></div><div class="metric"><b>${s.passengersAffected||0}</b><span>Passengers affected</span></div><div class="metric"><b>${s.reroute||0}</b><span>Proposed reroutes</span></div>`;$('events').innerHTML=data.activeEvents.map(e=>`<div class="event"><span class="tag">${e.severity}</span><br><b>${e.type}</b> centered on ${e.airport}<br><small>${e.radiusNm} NM impact radius</small></div>`).join('');$('airportCount').textContent=`${data.affectedAirports.length} airport(s) within active disruption areas`; $('airports').innerHTML=data.affectedAirports.map(a=>`<span class="airport">${a.icao} · ${a.city}</span>`).join('');$('plans').innerHTML=data.plans.map(p=>`<tr><td><b>${p.callsign}</b><br><small>${p.aircraft}</small></td><td>${p.plan.diversionAirport||'—'}</td><td>${p.passengers}</td><td class="${p.action}">${p.action.replaceAll('_',' ')}</td><td>${actionDetail(p)}</td><td><span class="pill">${p.approvalStatus}</span></td></tr>`).join('')||'<tr><td colspan="6">No affected flights in the current scenario.</td></tr>'}
-async function load(refresh=false){if(loading)return;loading=true;$('refresh').disabled=true;$('refresh').textContent='Refreshing…';try{render(await request(refresh?'/v1/dashboard/refresh':'/v1/dashboard',refresh?{method:'POST'}:{}))}catch(e){$('status').textContent=`Could not load dashboard: ${e.message}`}finally{loading=false;$('refresh').disabled=false;$('refresh').textContent='Refresh operational picture'}}$('refresh').onclick=()=>load(true);load();
-</script></body></html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Skyward | Network Operations</title>
+<style>
+:root{color-scheme:dark;--ink:#edf3ff;--muted:#9ba9c1;--bg:#07101f;--panel:#101d32;--line:#283957;--cyan:#57e5ff;--amber:#ffd166;--red:#ff7890}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 92% 0,#173b70,transparent 31rem),var(--bg);color:var(--ink);font:14px/1.5 ui-sans-serif,system-ui,sans-serif}
+main{max-width:1240px;margin:auto;padding:34px 22px 64px}
+.eyebrow{color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.14em;text-transform:uppercase}
+header{display:flex;align-items:flex-end;justify-content:space-between;gap:20px}
+h1{font-size:32px;letter-spacing:-.05em;margin:2px 0 0}
+h1 span{color:var(--cyan)}
+p{color:var(--muted)}
+button{border:0;border-radius:8px;padding:11px 15px;background:var(--cyan);color:#031521;font:800 14px inherit;cursor:pointer}
+.status{margin:20px 0;padding:11px 13px;background:#13223a;border-left:3px solid var(--cyan);border-radius:5px;color:var(--muted)}
+.grid{display:grid;grid-template-columns:1.1fr .9fr;gap:16px}
+.card{background:rgba(16,29,50,.93);border:1px solid var(--line);border-radius:14px;padding:19px}
+.full{grid-column:1/-1}
+h2{margin:0 0 12px;font-size:16px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:10px}
+.metric{background:#0a1528;border-radius:9px;padding:14px}
+.metric b{display:block;font-size:25px;color:var(--cyan)}
+.metric span{font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+.event{padding:10px 0;border-bottom:1px solid var(--line)}
+.event:last-child{border:0}
+.tag{color:var(--amber);font-size:11px;text-transform:uppercase;font-weight:800;letter-spacing:.05em}
+.airport{display:inline-block;margin:4px 4px 0 0;padding:5px 7px;border-radius:5px;background:#1a2943;color:#c8d8f7;font-size:12px}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{text-align:left;color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+th,td{padding:10px 8px;border-bottom:1px solid var(--line)}
+.reroute{color:var(--cyan)}.cancel{color:var(--red)}.delay{color:var(--amber)}
+.pill{display:inline-block;padding:3px 7px;background:#23324f;border-radius:99px;font-size:11px}
+tr[data-plan]{cursor:pointer}
+tr[data-plan]:hover{background:#13233d}
+.route-btn{padding:5px 8px;background:#203f65;color:#dceeff;font-size:11px}
+.modal{position:fixed;inset:0;z-index:5;background:#030815d9;display:grid;place-items:center;padding:20px}
+.modal.hidden{display:none}
+.brief{width:min(980px,100%);max-height:90vh;overflow:auto;background:#101d32;border:1px solid #3c5277;border-radius:14px;padding:22px;position:relative}
+.close{position:absolute;right:15px;top:13px;background:transparent;color:var(--ink);font-size:20px;padding:3px 8px}
+.brief-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:18px}
+.map{width:100%;background:#081427;border-radius:9px;border:1px solid var(--line);display:block}
+.legend{display:flex;gap:14px;color:var(--muted);font-size:12px;flex-wrap:wrap;margin:8px 0}
+.legend label{display:flex;align-items:center;gap:6px;cursor:pointer}
+.legend i{display:inline-block;width:18px;border-top:3px solid var(--cyan);vertical-align:middle}
+.legend .before{border-top-color:var(--amber);border-top-style:dashed}
+.point{cursor:pointer}
+.point:hover circle,.point.is-active circle{stroke:#fff;stroke-width:2}
+.change{padding:10px 0;border-bottom:1px solid var(--line)}
+.change p{margin:4px 0 0;color:var(--ink)}
+.point-info{margin-top:9px;padding:9px;background:#0a1528;border-radius:6px;color:var(--muted);min-height:64px}
+.point-info b{color:var(--ink)}
+.caption{margin:8px 0 0;font-size:12px}
+@media(max-width:720px){
+  header{align-items:start;flex-direction:column}
+  .grid,.brief-grid{grid-template-columns:1fr}
+  .metrics{grid-template-columns:1fr 1fr}
+  .full{grid-column:auto}
+  table{font-size:11px}
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <div class="eyebrow">Synthetic network test run · human decision support</div>
+      <h1>Sky<span>ward</span> Operations</h1>
+      <p>Continuously evaluates a 32-airport network for new disruptions and recovery plans.</p>
+    </div>
+    <button id="refresh">Refresh operational picture</button>
+  </header>
+  <div class="status" id="status">Loading the current operational picture…</div>
+  <section class="grid">
+    <div class="card full"><h2>Network impact</h2><div class="metrics" id="metrics"></div></div>
+    <div class="card"><h2 id="scenario">Active disruptions</h2><div id="events"></div></div>
+    <div class="card"><h2>Affected airports</h2><p id="airportCount">—</p><div id="airports"></div></div>
+    <div class="card full">
+      <h2>Generated review queue</h2>
+      <p>Plans are suggestions only. Select a route to compare the planned track with the proposed track.</p>
+      <table>
+        <thead><tr><th>Flight</th><th>Route</th><th>Passengers</th><th>Action</th><th>Recovery detail</th><th>Approval</th></tr></thead>
+        <tbody id="plans"></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<div id="modal" class="modal hidden" role="dialog" aria-modal="true" aria-labelledby="brief-title">
+  <article class="brief">
+    <button class="close" id="close" aria-label="Close">×</button>
+    <div id="brief"></div>
+  </article>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+let loading = false, snapshot, active = null, pinned = null;
+
+async function request(path, options = {}) {
+  const response = await fetch(path, { headers: { "content-type": "application/json" }, ...options });
+  const body = await response.json();
+  if (!response.ok) throw Error(body.error || "Request failed");
+  return body;
+}
+
+function esc(value) {
+  return String(value ?? "").replace(/[&<>"']/g, (ch) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;" }[ch]));
+}
+
+function fmt(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+function shiftLabel(minutes) {
+  if (!minutes) return "on time";
+  return `${minutes > 0 ? "+" : ""}${minutes} min`;
+}
+
+function actionDetail(plan) {
+  const deltas = plan.comparison?.deltas;
+  if (!deltas) return "Open the route for the recovery brief";
+  const timing = deltas.arrivalChangeMinutes ? `${shiftLabel(deltas.arrivalChangeMinutes)} at destination` : "Arrival unchanged";
+  const aircraft = deltas.aircraftSwapped ? `Switch ${deltas.fromAircraft.id} → ${deltas.toAircraft.id}` : "No plane switch";
+  const layover = deltas.newLayovers.length ? `New layover ${deltas.newLayovers.join(" · ")}` : "No new layover";
+  return `${timing}. ${aircraft}. ${layover}.`;
+}
+
+function render(data) {
+  snapshot = data;
+  $("status").textContent = `Scenario ${data.refreshNumber + 1}: ${data.scenario}. Refreshed ${new Date(data.refreshedAt).toLocaleTimeString()}. ${data.notice}`;
+  $("scenario").textContent = `Active disruptions — ${data.scenario}`;
+  const summary = data.summary;
+  $("metrics").innerHTML = `<div class="metric"><b>32</b><span>Airports analyzed</span></div><div class="metric"><b>${data.plans.length}</b><span>Plans requiring review</span></div><div class="metric"><b>${summary.passengersAffected || 0}</b><span>Passengers affected</span></div><div class="metric"><b>${summary.reroute || 0}</b><span>Proposed reroutes</span></div>`;
+  $("events").innerHTML = data.activeEvents.map((event) => `<div class="event"><span class="tag">${esc(event.severity)}</span><br><b>${esc(event.type)}</b> centered on ${esc(event.airport)}<br><small>${esc(event.radiusNm)} NM impact radius</small></div>`).join("");
+  $("airportCount").textContent = `${data.affectedAirports.length} airport(s) within active disruption areas`;
+  $("airports").innerHTML = data.affectedAirports.map((airport) => `<span class="airport">${esc(airport.icao)} · ${esc(airport.city)}</span>`).join("");
+  $("plans").innerHTML = data.plans.map((plan) => {
+    const from = plan.routeContext?.origin?.icao || "—";
+    const to = plan.routeContext?.originalDestination?.icao || "—";
+    return `<tr data-plan="${esc(plan.id)}"><td><b>${esc(plan.callsign)}</b><br><small>${esc(plan.aircraft)}</small></td><td><button class="route-btn" type="button">${esc(from)} → ${esc(to)}</button></td><td>${esc(plan.passengers)}</td><td class="${esc(plan.action)}">${esc(plan.action.replaceAll("_", " "))}</td><td>${esc(actionDetail(plan))}</td><td><span class="pill">${esc(plan.approvalStatus)}</span></td></tr>`;
+  }).join("") || `<tr><td colspan="6">No affected flights in the current scenario.</td></tr>`;
+}
+
+function project(points) {
+  const lats = points.map((point) => point.lat);
+  const lons = points.map((point) => point.lon);
+  let minLat = Math.min(...lats), maxLat = Math.max(...lats), minLon = Math.min(...lons), maxLon = Math.max(...lons);
+  const latSpan = Math.max(4, maxLat - minLat);
+  const lonSpan = Math.max(4, maxLon - minLon);
+  minLat -= latSpan * 0.18; maxLat += latSpan * 0.18; minLon -= lonSpan * 0.18; maxLon += lonSpan * 0.18;
+  const width = 640, height = 420;
+  return {
+    width, height,
+    xy(point) {
+      return {
+        x: ((point.lon - minLon) / (maxLon - minLon)) * (width - 56) + 28,
+        y: ((maxLat - point.lat) / (maxLat - minLat)) * (height - 56) + 28
+      };
+    },
+    grid() {
+      const lines = [];
+      const latStep = latSpan > 30 ? 10 : 5;
+      const lonStep = lonSpan > 40 ? 10 : 5;
+      for (let lat = Math.ceil(minLat / latStep) * latStep; lat < maxLat; lat += latStep) {
+        const y = this.xy({ lat, lon: minLon }).y;
+        lines.push(`<line x1="28" y1="${y.toFixed(1)}" x2="${width - 28}" y2="${y.toFixed(1)}" stroke="#1c314f" stroke-width="1"></line>`);
+      }
+      for (let lon = Math.ceil(minLon / lonStep) * lonStep; lon < maxLon; lon += lonStep) {
+        const x = this.xy({ lat: minLat, lon }).x;
+        lines.push(`<line x1="${x.toFixed(1)}" y1="28" x2="${x.toFixed(1)}" y2="${height - 28}" stroke="#1c314f" stroke-width="1"></line>`);
+      }
+      return lines.join("");
+    }
+  };
+}
+
+function interpolate(a, b, steps = 20) {
+  const lat1 = a.lat * Math.PI / 180, lon1 = a.lon * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180, lon2 = b.lon * Math.PI / 180;
+  const d = 2 * Math.asin(Math.sqrt(Math.sin((lat2 - lat1) / 2) ** 2 + Math.cos(lat1) * Math.cos(lat2) * Math.sin((lon2 - lon1) / 2) ** 2));
+  if (!d) return [a];
+  const points = [];
+  for (let i = 0; i <= steps; i++) {
+    const f = i / steps;
+    const A = Math.sin((1 - f) * d) / Math.sin(d);
+    const B = Math.sin(f * d) / Math.sin(d);
+    const x = A * Math.cos(lat1) * Math.cos(lon1) + B * Math.cos(lat2) * Math.cos(lon2);
+    const y = A * Math.cos(lat1) * Math.sin(lon1) + B * Math.cos(lat2) * Math.sin(lon2);
+    const z = A * Math.sin(lat1) + B * Math.sin(lat2);
+    points.push({ lat: Math.atan2(z, Math.sqrt(x * x + y * y)) * 180 / Math.PI, lon: Math.atan2(y, x) * 180 / Math.PI });
+  }
+  return points;
+}
+
+function linePath(waypoints, map) {
+  const drawn = [];
+  for (let i = 0; i < waypoints.length - 1; i++) drawn.push(...interpolate(waypoints[i], waypoints[i + 1]));
+  return drawn.map((point, index) => {
+    const { x, y } = map.xy(point);
+    return `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+  }).join(" ");
+}
+
+function marker(point, index, map) {
+  const { x, y } = map.xy(point);
+  const layers = point.kind === "context" ? "context" : point.kind === "layover" || point.kind === "bypass" || point.kind === "position" ? "after" : "before after";
+  const fill = point.kind === "layover" ? "#57e5ff" : point.kind === "position" ? "#ffffff" : point.kind === "bypass" ? "#ff7890" : point.kind === "context" ? "#607089" : "#ffd166";
+  const radius = point.kind === "context" || point.kind === "bypass" ? 3.5 : 5.5;
+  const label = point.icao || point.name;
+  return `<g class="point" data-point="${index}" data-layers="${layers}" tabindex="0" role="button">
+    <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="12" fill="transparent"></circle>
+    <circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${radius}" fill="${fill}" stroke="#081427" stroke-width="1"></circle>
+    <text x="${(x + 8).toFixed(1)}" y="${(y - 8).toFixed(1)}" fill="${point.kind === "context" ? "#8ea0bb" : "#d5e4ff"}" font-size="${point.kind === "context" ? 10 : 11}" font-family="ui-sans-serif,system-ui">${esc(label)}</text>
+  </g>`;
+}
+
+function pointCatalog(comparison) {
+  const points = [];
+  const push = (point, layer) => points.push({ ...point, layer });
+  comparison.before.waypoints.forEach((point) => push(point, "before"));
+  comparison.after.waypoints.forEach((point) => {
+    if (point.kind === "origin" || (point.kind === "destination" && comparison.before.waypoints.some((item) => item.icao === point.icao))) return;
+    push(point, "after");
+  });
+  (comparison.contextAirports || []).forEach((point) => push({ ...point, note: "Nearby station. It is not on this itinerary." }, "context"));
+  return points;
+}
+
+function describePoint(point, comparison) {
+  const stop = comparison.after.stops.find((item) => item.icao && item.icao === point.icao);
+  const kind = { origin: "Departure", destination: "Original destination", layover: "New layover", position: "Current position", bypass: "Airspace bend", context: "Nearby airport" }[point.kind] || "Point";
+  const lines = [`<b>${esc(point.icao || point.name)}</b> · ${esc(point.city || "")}`, `<span class="tag">${esc(kind)}</span>`];
+  if (point.name && point.icao) lines.push(esc(point.name));
+  if (point.kind === "origin") lines.push(`Planned departure ${esc(fmt(comparison.before.departureAt))}. Proposed ${esc(fmt(comparison.after.departureAt))}.`);
+  if (point.kind === "destination") lines.push(`Planned arrival ${esc(fmt(comparison.before.arrivalAt))}. Proposed arrival ${esc(fmt(comparison.after.arrivalAt))} (${esc(shiftLabel(comparison.deltas.arrivalChangeMinutes))}).`);
+  if (stop) lines.push(`On the ground ${esc(stop.groundMinutes)} min, ${esc(fmt(stop.arrivalAt))} to ${esc(fmt(stop.departureAt))}. ${esc(stop.reason)}`);
+  if (point.note && point.note !== stop?.reason) lines.push(esc(point.note));
+  if (comparison.deltas.aircraftSwapped && comparison.deltas.swapAt === point.icao) lines.push(`Aircraft changes here: ${esc(comparison.deltas.fromAircraft.id)} → ${esc(comparison.deltas.toAircraft.id)}.`);
+  return lines.join("<br>");
+}
+
+function drawMap(comparison) {
+  const points = pointCatalog(comparison);
+  const zonePoints = (comparison.mapZones || []).flatMap((zone) => zone.polygon.map(([lat, lon]) => ({ lat, lon })));
+  const map = project([...comparison.before.waypoints, ...comparison.after.waypoints, ...points, ...zonePoints]);
+  const zones = (comparison.mapZones || []).map((zone) => {
+    const d = zone.polygon.map(([lat, lon], index) => {
+      const { x, y } = map.xy({ lat, lon });
+      return `${index ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`;
+    }).join(" ") + " Z";
+    return `<path data-layers="zone" data-zone="${esc(zone.id)}" d="${d}" fill="rgba(255,120,144,.16)" stroke="#ff7890" stroke-width="1" style="cursor:pointer"><title>${esc(zone.name)}. ${esc(zone.reason)}</title></path>`;
+  }).join("");
+  const before = linePath(comparison.before.waypoints, map);
+  const after = linePath(comparison.after.waypoints, map);
+  return `<svg class="map" viewBox="0 0 ${map.width} ${map.height}" role="img" aria-label="Map comparing the planned route and the proposed route">
+    <rect width="${map.width}" height="${map.height}" fill="#081427"></rect>
+    ${map.grid()}
+    ${zones}
+    <path data-layers="before" d="${before}" fill="none" stroke="#ffd166" stroke-width="7" stroke-dasharray="8 7" stroke-linecap="round" opacity=".9"></path>
+    <path data-layers="after" d="${after}" fill="none" stroke="#57e5ff" stroke-width="2.6" stroke-linecap="round"></path>
+    ${points.map((point, index) => marker(point, index, map)).join("")}
+  </svg>`;
+}
+
+function scheduleRows(comparison) {
+  const aircraft = comparison.deltas.aircraftSwapped
+    ? `${comparison.deltas.fromAircraft.id} → ${comparison.deltas.toAircraft.id} at ${comparison.deltas.swapAt}`
+    : `${comparison.after.aircraftId} · ${comparison.after.aircraftType}`;
+  const stops = comparison.after.stops.length
+    ? comparison.after.stops.map((stop) => `${stop.icao} ${stop.groundMinutes} min`).join(", ")
+    : "Nonstop";
+  const rows = [
+    ["Departure", fmt(comparison.before.departureAt), fmt(comparison.after.departureAt)],
+    ["Arrival", fmt(comparison.before.arrivalAt), `${fmt(comparison.after.arrivalAt)} (${shiftLabel(comparison.deltas.arrivalChangeMinutes)})`],
+    ["Block", `${comparison.before.blockMinutes} min`, `${comparison.after.blockMinutes} min`],
+    ["Aircraft", `${comparison.before.aircraftId} · ${comparison.before.aircraftType}`, aircraft],
+    ["Stops", "Nonstop", stops]
+  ];
+  return rows.map((row) => `<tr><th>${esc(row[0])}</th><td>${esc(row[1])}</td><td>${esc(row[2])}</td></tr>`).join("");
+}
+
+function openBrief(plan) {
+  const comparison = plan.comparison;
+  if (!comparison) return;
+  active = { plan, comparison, points: pointCatalog(comparison) };
+  pinned = null;
+  const route = `${plan.routeContext.origin.icao} → ${plan.routeContext.originalDestination.icao}`;
+  $("brief").innerHTML = `<div class="brief-grid"><div>
+      <div class="eyebrow">${esc(plan.callsign)} · ${esc(plan.action.replaceAll("_", " "))}</div>
+      <h2 id="brief-title">${esc(route)}</h2>
+      <p>${esc(comparison.after.summary)}. ${comparison.deltas.geometryChanged ? "Amber is the plan. Cyan is the proposal." : "The track is unchanged, so the two lines overlap. The clock, aircraft, and stops are what moved."}</p>
+      <div class="legend">
+        <label><input type="checkbox" data-toggle="before" checked> <i class="before"></i> Before</label>
+        <label><input type="checkbox" data-toggle="after" checked> <i></i> After</label>
+      </div>
+      ${drawMap(comparison)}
+      <p class="caption">Click an airport, the aircraft, or a bend in the route. Restricted airspace is outlined when it shapes the path.</p>
+      <div class="point-info" id="point-info">Select a point on the map.</div>
+    </div><div>
+      <h2>What changes</h2>
+      <div class="change"><span class="tag">Time</span><p>${esc(comparison.deltas.timing)}</p></div>
+      <div class="change"><span class="tag">Aircraft</span><p>${esc(comparison.deltas.aircraft)}</p></div>
+      <div class="change"><span class="tag">Layovers</span><p>${esc(comparison.deltas.layover)}</p></div>
+      <table><thead><tr><th></th><th>Before</th><th>After</th></tr></thead><tbody>${scheduleRows(comparison)}</tbody></table>
+    </div></div>`;
+  $("modal").classList.remove("hidden");
+  $("close").focus();
+  const layover = active.points.findIndex((point) => point.kind === "layover");
+  showPoint(layover >= 0 ? layover : active.points.findIndex((point) => point.kind === "destination"));
+  $("brief").querySelectorAll("[data-toggle]").forEach((input) => { input.onchange = applyLayers; });
+  const svg = $("brief").querySelector("svg");
+  svg.onclick = (event) => {
+    const point = event.target.closest("[data-point]");
+    if (!point) return;
+    const index = Number(point.dataset.point);
+    pinned = pinned === index ? null : index;
+    showPoint(index);
+  };
+  svg.onmousemove = (event) => {
+    if (pinned !== null) return;
+    const point = event.target.closest("[data-point]");
+    if (point) showPoint(Number(point.dataset.point));
+  };
+  svg.onkeydown = (event) => {
+    const point = event.target.closest("[data-point]");
+    if (!point || (event.key !== "Enter" && event.key !== " ")) return;
+    event.preventDefault();
+    pinned = Number(point.dataset.point);
+    showPoint(pinned);
+  };
+}
+
+function showPoint(index) {
+  if (!active || index < 0) return;
+  $("point-info").innerHTML = describePoint(active.points[index], active.comparison);
+  $("brief").querySelectorAll(".point").forEach((point) => point.classList.toggle("is-active", Number(point.dataset.point) === index));
+}
+
+function applyLayers() {
+  const shown = new Set(["context", "zone"]);
+  $("brief").querySelectorAll("[data-toggle]").forEach((input) => { if (input.checked) shown.add(input.dataset.toggle); });
+  $("brief").querySelectorAll("[data-layers]").forEach((element) => {
+    const visible = element.dataset.layers.split(" ").some((layer) => shown.has(layer));
+    element.style.display = visible ? "" : "none";
+  });
+}
+
+function closeBrief() {
+  $("modal").classList.add("hidden");
+  active = null;
+  pinned = null;
+}
+
+async function load(refresh = false) {
+  if (loading) return;
+  loading = true;
+  $("refresh").disabled = true;
+  $("refresh").textContent = "Refreshing…";
+  try { render(await request(refresh ? "/v1/dashboard/refresh" : "/v1/dashboard", refresh ? { method: "POST" } : {})); }
+  catch (error) { $("status").textContent = `Could not load dashboard: ${error.message}`; }
+  finally { loading = false; $("refresh").disabled = false; $("refresh").textContent = "Refresh operational picture"; }
+}
+
+$("refresh").onclick = () => load(true);
+$("plans").onclick = (event) => {
+  const row = event.target.closest("[data-plan]");
+  if (!row || !snapshot) return;
+  const plan = snapshot.plans.find((item) => item.id === row.dataset.plan);
+  if (plan) openBrief(plan);
+};
+$("close").onclick = closeBrief;
+$("modal").onclick = (event) => { if (event.target.id === "modal") closeBrief(); };
+document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeBrief(); });
+load();
+</script>
+</body>
+</html>

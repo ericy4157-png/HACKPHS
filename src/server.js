@@ -5,11 +5,18 @@ import { planReroute } from "./routing.js";
 import { operationalNetwork, pullOpenSkyStates } from "./network.js";
 import { simulateDisaster } from "./simulation.js";
 import { buildOperationalSnapshot } from "./scenarios.js";
+import { decideFlight, toUiFlights, toUiIncident } from "./uiApi.js";
 
 const incidents = [];
-const approvalQueue = [];
 let refreshNumber = 0;
 let operationalSnapshot = buildOperationalSnapshot(refreshNumber);
+const approvalQueue = [...operationalSnapshot.plans];
+const advanceScenario = () => {
+  refreshNumber += 1;
+  operationalSnapshot = buildOperationalSnapshot(refreshNumber);
+  approvalQueue.length = 0; approvalQueue.push(...operationalSnapshot.plans);
+  return operationalSnapshot;
+};
 const send = (res, status, body) => { res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(JSON.stringify(body)); };
 const readJson = async (req) => new Promise((resolve, reject) => { let body = ""; req.on("data", (chunk) => body += chunk); req.on("end", () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); } }); });
 
@@ -26,11 +33,26 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "GET" && url.pathname === "/v1/flights") return send(res, 200, { flights });
     if (req.method === "GET" && url.pathname === "/v1/network") return send(res, 200, operationalNetwork());
     if (req.method === "GET" && url.pathname === "/v1/dashboard") return send(res, 200, operationalSnapshot);
-    if (req.method === "POST" && url.pathname === "/v1/dashboard/refresh") {
-      refreshNumber += 1;
-      operationalSnapshot = buildOperationalSnapshot(refreshNumber);
-      approvalQueue.length = 0; approvalQueue.push(...operationalSnapshot.plans);
-      return send(res, 200, operationalSnapshot);
+    if (req.method === "POST" && url.pathname === "/v1/dashboard/refresh") return send(res, 200, advanceScenario());
+    // Globe UI contract (UI/src/api/client.ts).
+    if (req.method === "GET" && url.pathname === "/api/incident") return send(res, 200, toUiIncident(operationalSnapshot));
+    if (req.method === "GET" && url.pathname === "/api/flights") return send(res, 200, toUiFlights(operationalSnapshot));
+    if (req.method === "POST" && url.pathname === "/api/scenario/next") {
+      const snapshot = advanceScenario();
+      return send(res, 200, { incident: toUiIncident(snapshot), flights: toUiFlights(snapshot) });
+    }
+    const uiFlightMatch = url.pathname.match(/^\/api\/flights\/([^/]+)$/);
+    if (req.method === "GET" && uiFlightMatch) {
+      const flight = toUiFlights(operationalSnapshot).find((item) => item.id === decodeURIComponent(uiFlightMatch[1]));
+      return flight ? send(res, 200, flight) : send(res, 404, { error: "Unknown flight" });
+    }
+    const uiDecisionMatch = url.pathname.match(/^\/api\/flights\/([^/]+)\/(accept|reject)$/);
+    if (req.method === "POST" && uiDecisionMatch) {
+      const flightId = decodeURIComponent(uiDecisionMatch[1]);
+      const input = await readJson(req);
+      const flight = decideFlight(operationalSnapshot, flightId, uiDecisionMatch[2], input.decidedBy);
+      if (!flight) return send(res, 404, { error: "No recovery plan for this flight in the current scenario" });
+      return send(res, 200, { ok: true, flightId, flight, incident: toUiIncident(operationalSnapshot), notice: "Decision recorded only; dispatch/ATC execution is intentionally not automated." });
     }
     if (req.method === "GET" && url.pathname === "/v1/integrations/opensky/states") return send(res, 200, await pullOpenSkyStates());
     if (req.method === "GET" && url.pathname === "/v1/airspace/restrictions") return send(res, 200, { restrictions: restrictedZones });

@@ -1,4 +1,5 @@
 import { airports, fleet, flights } from "./data.js";
+import { buildComparison } from "./comparison.js";
 import { distanceNm, diversionOptions, planReroute } from "./routing.js";
 
 const airport = (icao) => airports.find((item) => item.icao === icao);
@@ -25,18 +26,25 @@ function detailedPlan(flight, closedAirports, severity) {
   const standard = {
     flightId: flight.id, callsign: flight.callsign, aircraft: flight.aircraftId, passengers: flight.passengers,
     action, approvalStatus: "pending", generatedAt: new Date().toISOString(),
+    routeContext: { origin: airport(flight.origin), originalDestination: airport(flight.destination), currentPosition: flight.position || airport(flight.origin) },
     requiredChecks: ["Dispatcher validates NOTAM, weather, ETOPS/performance, crew duty and traffic-flow constraints", "ATC and airport operations acceptance required before execution"]
   };
-  if (action === "cancel") return { ...standard, plan: { reason: "Departure airport unavailable during severe disruption", passengerRecovery: "Rebook to next available protected itinerary", aircraftAction: "Hold at origin; await ramp and maintenance release" } };
+  if (action === "cancel") return finish(flight, closedAirports, { ...standard, plan: { reason: "Departure airport unavailable during severe disruption", passengerRecovery: "Rebook to next available protected itinerary", aircraftAction: "Hold at origin; await ramp and maintenance release" } });
   if (action === "delay") {
     const delayMinutes = severity === "severe" ? 240 : 90;
-    return { ...standard, plan: { reason: "Origin or destination operating below capacity", estimatedDelayMinutes: delayMinutes, fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance check required before next rotation" : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`, revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes) } };
+    return finish(flight, closedAirports, { ...standard, plan: { reason: "Origin or destination operating below capacity", estimatedDelayMinutes: delayMinutes, fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance check required before next rotation" : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`, revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes) } });
   }
   const alternates = diversionOptions(currentPosition, flight.aircraft, closedAirports, airport(flight.destination));
   const destination = alternates[0]?.icao;
-  if (!destination) return { ...standard, action: "hold_for_human_review", plan: { reason: "No compliant diversion airport found in modeled network" } };
+  if (!destination) return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: "No compliant diversion airport found in modeled network" } });
   const reroute = planReroute({ flight, destination, closedAirports, policy: { avoidHighTerrain: true } });
-  return { ...standard, plan: { reason: `Destination ${flight.destination} unavailable`, diversionAirport: destination, reroute, fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance control approval required at diversion" : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`, onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}` } };
+  return finish(flight, closedAirports, { ...standard, plan: { reason: `Destination ${flight.destination} unavailable`, diversionAirport: destination, reroute, fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance control approval required at diversion" : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`, onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}` } });
+}
+
+function finish(flight, closedAirports, plan) {
+  const comparison = buildComparison({ flight, action: plan.action, delayMinutes: plan.plan.estimatedDelayMinutes || 0, diversionAirport: plan.plan.diversionAirport, reroute: plan.plan.reroute, closedAirports });
+  plan.plan.changeSummary = { timing: comparison.deltas.timing, aircraft: comparison.deltas.aircraft, layover: comparison.deltas.layover };
+  return { ...plan, comparison };
 }
 
 export function simulateDisaster(input = {}) {

@@ -1,78 +1,60 @@
 import { useState } from "react";
-import type { Flight } from "../types";
-import { acceptReroute, rejectReroute } from "../api/client";
+import type { DecisionResult, Flight } from "../types";
+import { acceptReroute, isMockMode, rejectReroute } from "../api/client";
 import { airportByIata } from "../data/mockFlights";
 
 type Props = {
-  flight: Flight | null;
+  flight: Flight;
+  onDecision: (result: DecisionResult) => void;
+  onBack: () => void;
 };
 
-function pathLabel(flight: Flight, kind: "original" | "proposed"): string {
-  if (kind === "original") {
-    return `${flight.origin} → ${flight.destination}`;
-  }
+const ACTION_LABEL: Record<NonNullable<Flight["action"]>, string> = {
+  reroute: "Divert",
+  delay: "Delay",
+  cancel: "Cancel & rebook",
+  hold_for_human_review: "Manual review",
+};
+
+function formatTime(iso: string): string {
+  return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+}
+
+/** Mock flights only have coordinates, so match known hubs to build a readable "via" line. */
+function mockProposedLabel(flight: Flight): string {
+  const hits = [flight.origin, flight.destination, "ORD", "DFW", "DEN", "ATL", "CLT"];
   const codes = flight.proposedPath
     .map((coord) => {
-      // Match known airports near waypoints for a readable via line
-      const hits = [flight.origin, flight.destination, "ORD", "DFW", "DEN", "ATL", "CLT"];
       for (const code of hits) {
         const a = airportByIata(code);
-        if (Math.abs(a.lat - coord[0]) < 0.3 && Math.abs(a.lng - coord[1]) < 0.3) {
-          return code;
-        }
+        if (Math.abs(a.lat - coord[0]) < 0.3 && Math.abs(a.lng - coord[1]) < 0.3) return code;
       }
       return null;
     })
     .filter((x): x is string => Boolean(x));
-
   const unique = codes.filter((c, i) => codes.indexOf(c) === i);
-  if (unique.length >= 2) return unique.join(" → ");
-  return `${flight.origin} → via hub → ${flight.destination}`;
+  return unique.length >= 2 ? unique.join(" → ") : `${flight.origin} → via hub → ${flight.destination}`;
 }
 
-export function FlightDetailRail({ flight }: Props) {
+export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  if (!flight) {
-    return (
-      <aside className="rail rail-right">
-        <div className="empty-select">
-          <p className="rail-kicker">Selection</p>
-          <h3>Select a flight</h3>
-          <p className="rail-body">
-            Click a glowing marker on the globe to inspect its disrupted path and the proposed
-            reroute.
-          </p>
-        </div>
-      </aside>
-    );
-  }
+  const originCity = flight.originAirport?.city ?? airportByIata(flight.origin).city;
+  const destCity = flight.destinationAirport?.city ?? airportByIata(flight.destination).city;
+  const hasPlan = flight.status !== "ok";
+  const decided = flight.approvalStatus !== undefined && flight.approvalStatus !== "pending";
 
-  const origin = airportByIata(flight.origin);
-  const dest = airportByIata(flight.destination);
-
-  const onAccept = async () => {
-    setBusy("accept");
+  const decide = async (kind: "accept" | "reject") => {
+    setBusy(kind);
     setNote(null);
     try {
-      await acceptReroute(flight.id);
-      setNote("Reroute accepted (mock).");
-    } catch {
-      setNote("Accept failed.");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const onReject = async () => {
-    setBusy("reject");
-    setNote(null);
-    try {
-      await rejectReroute(flight.id);
-      setNote("Reroute rejected (mock).");
-    } catch {
-      setNote("Reject failed.");
+      const result = await (kind === "accept" ? acceptReroute : rejectReroute)(flight.id);
+      onDecision(result);
+      const verb = kind === "accept" ? "accepted" : "rejected";
+      setNote(isMockMode() ? `Plan ${verb} (demo data, not saved to the backend).` : `Plan ${verb}. Recorded for dispatch and ATC review; nothing is sent to the aircraft.`);
+    } catch (e) {
+      setNote(e instanceof Error ? e.message : `${kind === "accept" ? "Accept" : "Reject"} failed.`);
     } finally {
       setBusy(null);
     }
@@ -80,6 +62,9 @@ export function FlightDetailRail({ flight }: Props) {
 
   return (
     <aside className="rail rail-right">
+      <button className="back-link" onClick={onBack}>
+        ← All flights
+      </button>
       <p className="rail-kicker">Flight detail</p>
       <div className="flight-head">
         <h2 className="callsign">{flight.callsign}</h2>
@@ -87,7 +72,7 @@ export function FlightDetailRail({ flight }: Props) {
           {flight.origin} → {flight.destination}
         </div>
         <span className="status-chip" data-status={flight.status}>
-          {flight.status}
+          {flight.action ? `${ACTION_LABEL[flight.action]} · ${flight.status}` : flight.status}
         </span>
       </div>
 
@@ -103,30 +88,67 @@ export function FlightDetailRail({ flight }: Props) {
       </div>
 
       <p className="rail-body">
-        {origin.city} to {dest.city}. Skyward proposes a capacity-aware path to absorb the cascade.
+        {originCity} to {destCity}.{" "}
+        {hasPlan ? "Skyward proposes a recovery plan for review." : "Outside the disruption area; no change proposed."}
       </p>
 
       <div className="path-compare">
         <div className="path-row original">
           <span className="path-label">Original</span>
-          <span>{pathLabel(flight, "original")}</span>
+          <span>{flight.originalRoute ?? `${flight.origin} → ${flight.destination}`}</span>
         </div>
-        <div className="path-row proposed">
-          <span className="path-label">Reroute</span>
-          <span>{pathLabel(flight, "proposed")}</span>
-        </div>
+        {hasPlan && (
+          <div className="path-row proposed">
+            <span className="path-label">Proposed</span>
+            <span>{flight.proposedRoute ?? mockProposedLabel(flight)}</span>
+          </div>
+        )}
       </div>
+
+      {flight.changes && (
+        <div className="change-list">
+          <div className="change-item">
+            <span className="path-label">Time</span>
+            <p>{flight.changes.timing}</p>
+            {flight.schedule && (
+              <p className="change-meta">
+                Arrival {formatTime(flight.schedule.before.arrivalAt)} → {formatTime(flight.schedule.after.arrivalAt)}
+              </p>
+            )}
+          </div>
+          <div className="change-item">
+            <span className="path-label">Aircraft</span>
+            <p>{flight.changes.aircraft}</p>
+            {flight.aircraft?.swapped && (
+              <p className="change-meta">
+                {flight.aircraft.before.id} → {flight.aircraft.after.id} at {flight.aircraft.swapAt}
+              </p>
+            )}
+          </div>
+          <div className="change-item">
+            <span className="path-label">Layovers</span>
+            <p>{flight.changes.layover}</p>
+            {flight.stops?.map((stop) => (
+              <p key={stop.code} className="change-meta">
+                {stop.code} · {stop.groundMinutes} min on the ground, {formatTime(stop.arrivalAt)}–{formatTime(stop.departureAt)}
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       {note && <p className="rail-body">{note}</p>}
 
-      <div className="actions">
-        <button className="btn btn-primary" disabled={busy !== null} onClick={onAccept}>
-          {busy === "accept" ? "…" : "Accept"}
-        </button>
-        <button className="btn btn-ghost" disabled={busy !== null} onClick={onReject}>
-          {busy === "reject" ? "…" : "Reject"}
-        </button>
-      </div>
+      {hasPlan && (
+        <div className="actions">
+          <button className="btn btn-primary" disabled={busy !== null || decided} onClick={() => decide("accept")}>
+            {busy === "accept" ? "…" : flight.approvalStatus === "approved" ? "Accepted" : "Accept"}
+          </button>
+          <button className="btn btn-ghost" disabled={busy !== null || decided} onClick={() => decide("reject")}>
+            {busy === "reject" ? "…" : flight.approvalStatus === "rejected" ? "Rejected" : "Reject"}
+          </button>
+        </div>
+      )}
     </aside>
   );
 }

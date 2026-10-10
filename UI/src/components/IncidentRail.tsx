@@ -3,9 +3,11 @@ import type { Flight, Incident } from "../types";
 type Props = {
   incident: Incident | null;
   flights: Flight[];
+  onNextScenario: () => void;
+  advancing: boolean;
 };
 
-export function IncidentRail({ incident, flights }: Props) {
+export function IncidentRail({ incident, flights, onNextScenario, advancing }: Props) {
   if (!incident) {
     return (
       <aside className="rail rail-left">
@@ -21,8 +23,11 @@ export function IncidentRail({ incident, flights }: Props) {
 
   return (
     <aside className="rail rail-left">
-      <p className="rail-kicker">Active incident</p>
+      <p className="rail-kicker">
+        Active incident{incident.scenarioNumber ? ` · scenario ${incident.scenarioNumber}` : ""}
+      </p>
       <h2 className="rail-title">{incident.name}</h2>
+      <p className="rail-body">{incident.region}</p>
       <p className="rail-body">{incident.summary}</p>
 
       <div className="metric-row">
@@ -37,7 +42,7 @@ export function IncidentRail({ incident, flights }: Props) {
       </div>
 
       <div className="progress">
-        <div className="metric-label">Recovery · {pct}%</div>
+        <div className="metric-label">Decisions · {pct}%</div>
         <div className="progress-track">
           <div className="progress-fill" style={{ width: `${pct}%` }} />
         </div>
@@ -47,6 +52,14 @@ export function IncidentRail({ incident, flights }: Props) {
         <span className="status-dot" aria-hidden />
         <span>{incident.statusLine}</span>
       </div>
+
+      <div className="actions actions-single">
+        <button className="btn btn-ghost" disabled={advancing} onClick={onNextScenario}>
+          {advancing ? "Loading…" : "Next scenario"}
+        </button>
+      </div>
+
+      {incident.notice && <p className="rail-footnote">{incident.notice}</p>}
     </aside>
   );
 }
