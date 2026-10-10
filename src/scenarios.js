@@ -1,10 +1,10 @@
 import { simulateDisaster } from "./simulation.js";
 
 const scenarios = [
-  { label: "Atlantic hurricane band", events: [{ type: "hurricane", airport: "KMIA", radiusNm: 125, severity: "severe" }, { type: "severe weather", airport: "KATL", radiusNm: 55, severity: "moderate" }] },
-  { label: "North Atlantic wind disruption", events: [{ type: "windstorm", airport: "EGLL", radiusNm: 45, severity: "severe" }, { type: "flooding", airport: "EHAM", radiusNm: 25, severity: "moderate" }] },
-  { label: "Pacific volcanic ash advisory", events: [{ type: "volcanic ash", airport: "RJTT", radiusNm: 160, severity: "severe" }, { type: "typhoon", airport: "VHHH", radiusNm: 80, severity: "moderate" }] },
-  { label: "Mediterranean heat and wildfire event", events: [{ type: "wildfire", airport: "LIRF", radiusNm: 65, severity: "moderate" }, { type: "heat event", airport: "LTFM", radiusNm: 45, severity: "moderate" }] }
+  { label: "Atlantic hurricane band", events: [{ type: "hurricane", airport: "KMIA", radiusNm: 125, severity: "severe", windowHours: 24 }, { type: "severe weather", airport: "KATL", radiusNm: 55, severity: "moderate", windowHours: 24 }] },
+  { label: "North Atlantic wind disruption", events: [{ type: "windstorm", airport: "EGLL", radiusNm: 45, severity: "severe", windowHours: 24 }, { type: "flooding", airport: "EHAM", radiusNm: 25, severity: "moderate", windowHours: 24 }] },
+  { label: "Pacific volcanic ash advisory", events: [{ type: "volcanic ash", airport: "RJTT", radiusNm: 160, severity: "severe", windowHours: 24 }, { type: "typhoon", airport: "VHHH", radiusNm: 80, severity: "moderate", windowHours: 24 }] },
+  { label: "Mediterranean heat and wildfire event", events: [{ type: "wildfire", airport: "LIRF", radiusNm: 65, severity: "moderate", windowHours: 24 }, { type: "heat event", airport: "LTFM", radiusNm: 45, severity: "moderate", windowHours: 24 }] }
 ];
 
 export function buildOperationalSnapshot(refreshNumber = 0) {

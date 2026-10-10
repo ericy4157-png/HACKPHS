@@ -98,5 +98,5 @@ const server = http.createServer(async (req, res) => {
   } catch (error) { return send(res, 400, { error: error.message }); }
 });
 
-if (process.env.NODE_ENV !== "test") server.listen(process.env.PORT || 3000, () => console.log("Skyward API listening on :3000"));
+if (process.env.NODE_ENV !== "test") server.listen(process.env.PORT || 3000, () => console.log(`Skyward API listening on :${server.address().port}`));
 export { server };

@@ -18,6 +18,15 @@ function flightImpact(flight, closedAirports, severity) {
   return "delay";
 }
 
+/** A reroute to `destination`, or the reason none can be built; one bad alternate must not stop the others. */
+function rerouteOrError(flight, destination, closedAirports) {
+  try {
+    return { reroute: planReroute({ flight, destination, closedAirports, policy: { avoidHighTerrain: true } }) };
+  } catch (error) {
+    return { reroute: null, error: error.message };
+  }
+}
+
 function detailedPlan(flight, closedAirports, severity) {
   const aircraft = fleet.find((item) => item.id === flight.aircraftId);
   const action = flightImpact(flight, closedAirports, severity);
@@ -35,10 +44,20 @@ function detailedPlan(flight, closedAirports, severity) {
     return finish(flight, closedAirports, { ...standard, plan: { reason: "Origin or destination operating below capacity", estimatedDelayMinutes: delayMinutes, fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance check required before next rotation" : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`, revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes) } });
   }
   const alternates = diversionOptions(currentPosition, flight.aircraft, closedAirports, airport(flight.destination));
-  const destination = alternates[0]?.icao;
-  if (!destination) return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: "No compliant diversion airport found in modeled network" } });
-  const reroute = planReroute({ flight, destination, closedAirports, policy: { avoidHighTerrain: true } });
-  return finish(flight, closedAirports, { ...standard, plan: { reason: `Destination ${flight.destination} unavailable`, diversionAirport: destination, reroute, fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance control approval required at diversion" : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`, onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}` } });
+  if (!alternates.length) return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: "No compliant diversion airport found in modeled network" } });
+  // Alternates are already ranked; take the best one whose fuel margin is not negative.
+  const evaluated = alternates.map((alternate) => ({ alternate, ...rerouteOrError(flight, alternate.icao, closedAirports) }));
+  const fuelChecks = evaluated.map(({ alternate, reroute, error }) => (reroute
+    ? { airport: alternate.icao, fuelMarginMinutes: reroute.operationalAssessment.fuelMarginMinutes }
+    : { airport: alternate.icao, fuelMarginMinutes: null, error }));
+  const chosen = evaluated.find(({ reroute }) => reroute && reroute.operationalAssessment.fuelMarginMinutes >= 0);
+  if (!chosen) {
+    const margins = fuelChecks.map((check) => (check.error ? `${check.airport} no route` : `${check.airport} ${check.fuelMarginMinutes} min`)).join(", ");
+    return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: `Destination ${flight.destination} unavailable and no alternate meets the fuel reserve (fuel margin: ${margins})`, alternateFuelChecks: fuelChecks } });
+  }
+  const destination = chosen.alternate.icao;
+  const reroute = chosen.reroute;
+  return finish(flight, closedAirports, { ...standard, plan: { reason: `Destination ${flight.destination} unavailable`, diversionAirport: destination, diversionRunwayCheck: chosen.alternate.runwayCheck, alternateFuelChecks: fuelChecks, reroute, fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance control approval required at diversion" : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`, onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}` } });
 }
 
 function finish(flight, closedAirports, plan) {
@@ -47,19 +66,32 @@ function finish(flight, closedAirports, plan) {
   return { ...plan, comparison };
 }
 
+export const DEFAULT_WINDOW_HOURS = 24;
+
+/**
+ * Legs an event can affect: airborne legs, plus scheduled legs departing before the window closes.
+ * The window is how long the event lasts; it is not the recovery engine's lookahead depth.
+ */
+export function flightsInWindow(windowHours = DEFAULT_WINDOW_HOURS) {
+  return flights.filter((flight) => flight.status === "airborne" || flight.scheduledOffsetMinutes < windowHours * 60);
+}
+
 export function simulateDisaster(input = {}) {
   const severity = input.severity || "moderate";
   const radiusNm = Number(input.radiusNm || 120);
+  const windowHours = input.windowHours === undefined ? DEFAULT_WINDOW_HOURS : Number(input.windowHours);
   const centerAirport = input.airport ? airport(input.airport) : null;
   const center = input.center || centerAirport;
   if (!center?.lat || !center?.lon || radiusNm <= 0) throw new Error("Provide an airport or center { lat, lon }, plus a positive radiusNm");
+  if (!Number.isFinite(windowHours) || windowHours <= 0) throw new Error("windowHours must be a positive number of hours");
   const closedAirports = affectedAirportCodes({ center, radiusNm });
-  const plans = flights.map((flight) => detailedPlan(flight, closedAirports, severity)).filter(Boolean)
+  const evaluated = flightsInWindow(windowHours);
+  const plans = evaluated.map((flight) => detailedPlan(flight, closedAirports, severity)).filter(Boolean)
     .map((plan, index) => ({ ...plan, id: `PLAN-${Date.now()}-${index + 1}` }));
   const counts = Object.fromEntries(["reroute", "delay", "cancel", "hold_for_human_review"].map((action) => [action, plans.filter((plan) => plan.action === action).length]));
   return {
-    mode: "benchmark_simulation_only", scenario: { id: `SIM-${Date.now()}`, type: input.type || "weather", severity, center, radiusNm, startedAt: new Date().toISOString() },
-    affectedAirports: closedAirports.map((icao) => airport(icao)), summary: { flightsEvaluated: flights.length, impactedFlights: plans.length, passengersAffected: plans.reduce((sum, plan) => sum + plan.passengers, 0), ...counts }, plans,
+    mode: "benchmark_simulation_only", scenario: { id: `SIM-${Date.now()}`, type: input.type || "weather", severity, center, radiusNm, windowHours, startedAt: new Date().toISOString() },
+    affectedAirports: closedAirports.map((icao) => airport(icao)), summary: { flightsEvaluated: evaluated.length, flightsInNetwork: flights.length, impactedFlights: plans.length, passengersAffected: plans.reduce((sum, plan) => sum + plan.passengers, 0), ...counts }, plans,
     safetyNotice: "Synthetic benchmark only. This result does not alter live operations and cannot be used as an ATC clearance or dispatch release."
   };
 }

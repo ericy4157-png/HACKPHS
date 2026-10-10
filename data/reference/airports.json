@@ -1,0 +1,290 @@
+{
+  "KJFK": {
+    "icao": "KJFK",
+    "iata": "JFK",
+    "name": "John F. Kennedy International Airport",
+    "lat": 40.639447,
+    "lon": -73.779317,
+    "elevationFt": 13,
+    "longestRunwayFt": 14511
+  },
+  "KBOS": {
+    "icao": "KBOS",
+    "iata": "BOS",
+    "name": "Boston Logan International Airport",
+    "lat": 42.36197,
+    "lon": -71.0079,
+    "elevationFt": 20,
+    "longestRunwayFt": 10083
+  },
+  "KIAD": {
+    "icao": "KIAD",
+    "iata": "IAD",
+    "name": "Washington Dulles International Airport",
+    "lat": 38.9445,
+    "lon": -77.455803,
+    "elevationFt": 312,
+    "longestRunwayFt": 11500
+  },
+  "KORD": {
+    "icao": "KORD",
+    "iata": "ORD",
+    "name": "Chicago O'Hare International Airport",
+    "lat": 41.9786,
+    "lon": -87.9048,
+    "elevationFt": 680,
+    "longestRunwayFt": 13000
+  },
+  "KDEN": {
+    "icao": "KDEN",
+    "iata": "DEN",
+    "name": "Denver International Airport",
+    "lat": 39.860027,
+    "lon": -104.673792,
+    "elevationFt": 5431,
+    "longestRunwayFt": 16000
+  },
+  "KLAX": {
+    "icao": "KLAX",
+    "iata": "LAX",
+    "name": "Los Angeles International Airport",
+    "lat": 33.942501,
+    "lon": -118.407997,
+    "elevationFt": 125,
+    "longestRunwayFt": 12894
+  },
+  "KSFO": {
+    "icao": "KSFO",
+    "iata": "SFO",
+    "name": "San Francisco International Airport",
+    "lat": 37.619806,
+    "lon": -122.374821,
+    "elevationFt": 13,
+    "longestRunwayFt": 11870
+  },
+  "KSEA": {
+    "icao": "KSEA",
+    "iata": "SEA",
+    "name": "Seattle–Tacoma International Airport",
+    "lat": 47.447943,
+    "lon": -122.310276,
+    "elevationFt": 433,
+    "longestRunwayFt": 11901
+  },
+  "EGLL": {
+    "icao": "EGLL",
+    "iata": "LHR",
+    "name": "London Heathrow Airport",
+    "lat": 51.470748,
+    "lon": -0.459909,
+    "elevationFt": 83,
+    "longestRunwayFt": 12799
+  },
+  "LFPG": {
+    "icao": "LFPG",
+    "iata": "CDG",
+    "name": "Charles de Gaulle International Airport",
+    "lat": 49.00896,
+    "lon": 2.554117,
+    "elevationFt": 392,
+    "longestRunwayFt": 13829
+  },
+  "EDDF": {
+    "icao": "EDDF",
+    "iata": "FRA",
+    "name": "Frankfurt Main Airport",
+    "lat": 50.026706,
+    "lon": 8.55835,
+    "elevationFt": 364,
+    "longestRunwayFt": 13123
+  },
+  "LTFM": {
+    "icao": "LTFM",
+    "iata": "IST",
+    "name": "İstanbul Airport",
+    "lat": 41.274874,
+    "lon": 28.732136,
+    "elevationFt": 325,
+    "longestRunwayFt": 13451
+  },
+  "OMDB": {
+    "icao": "OMDB",
+    "iata": "DXB",
+    "name": "Dubai International Airport",
+    "lat": 25.24979,
+    "lon": 55.370992,
+    "elevationFt": 62,
+    "longestRunwayFt": 14590
+  },
+  "VABB": {
+    "icao": "VABB",
+    "iata": "BOM",
+    "name": "Chhatrapati Shivaji Maharaj International Airport",
+    "lat": 19.088699,
+    "lon": 72.867897,
+    "elevationFt": 39,
+    "longestRunwayFt": 11511
+  },
+  "WSSS": {
+    "icao": "WSSS",
+    "iata": "SIN",
+    "name": "Singapore Changi Airport",
+    "lat": 1.35019,
+    "lon": 103.994003,
+    "elevationFt": 22,
+    "longestRunwayFt": 13123
+  },
+  "RJTT": {
+    "icao": "RJTT",
+    "iata": "HND",
+    "name": "Tokyo Haneda International Airport",
+    "lat": 35.549678,
+    "lon": 139.786958,
+    "elevationFt": 35,
+    "longestRunwayFt": 11024
+  },
+  "KATL": {
+    "icao": "KATL",
+    "iata": "ATL",
+    "name": "Hartsfield Jackson Atlanta International Airport",
+    "lat": 33.6367,
+    "lon": -84.428101,
+    "elevationFt": 1026,
+    "longestRunwayFt": 12390
+  },
+  "KDFW": {
+    "icao": "KDFW",
+    "iata": "DFW",
+    "name": "Dallas Fort Worth International Airport",
+    "lat": 32.896801,
+    "lon": -97.038002,
+    "elevationFt": 607,
+    "longestRunwayFt": 13401
+  },
+  "KMIA": {
+    "icao": "KMIA",
+    "iata": "MIA",
+    "name": "Miami International Airport",
+    "lat": 25.796011,
+    "lon": -80.289751,
+    "elevationFt": 8,
+    "longestRunwayFt": 13016
+  },
+  "CYYZ": {
+    "icao": "CYYZ",
+    "iata": "YYZ",
+    "name": "Toronto Pearson International Airport",
+    "lat": 43.675935,
+    "lon": -79.629421,
+    "elevationFt": 569,
+    "longestRunwayFt": 11120
+  },
+  "MMMX": {
+    "icao": "MMMX",
+    "iata": "MEX",
+    "name": "Mexico City Benito Juárez International Airport",
+    "lat": 19.435822,
+    "lon": -99.07033,
+    "elevationFt": 7316,
+    "longestRunwayFt": 12966
+  },
+  "SBGR": {
+    "icao": "SBGR",
+    "iata": "GRU",
+    "name": "São Paulo/Guarulhos–Governor André Franco Montoro International Airport",
+    "lat": -23.431274,
+    "lon": -46.469954,
+    "elevationFt": 2461,
+    "longestRunwayFt": 12139
+  },
+  "EHAM": {
+    "icao": "EHAM",
+    "iata": "AMS",
+    "name": "Amsterdam Airport Schiphol",
+    "lat": 52.308601,
+    "lon": 4.76389,
+    "elevationFt": -11,
+    "longestRunwayFt": 12467
+  },
+  "LEMD": {
+    "icao": "LEMD",
+    "iata": "MAD",
+    "name": "Adolfo Suárez Madrid–Barajas Airport",
+    "lat": 40.493407,
+    "lon": -3.572249,
+    "elevationFt": 1998,
+    "longestRunwayFt": 14271
+  },
+  "LIRF": {
+    "icao": "LIRF",
+    "iata": "FCO",
+    "name": "Rome–Fiumicino Leonardo da Vinci International Airport",
+    "lat": 41.804532,
+    "lon": 12.251998,
+    "elevationFt": 13,
+    "longestRunwayFt": 12801
+  },
+  "FAOR": {
+    "icao": "FAOR",
+    "iata": "JNB",
+    "name": "O.R. Tambo International Airport",
+    "lat": -26.140081,
+    "lon": 28.246801,
+    "elevationFt": 5558,
+    "longestRunwayFt": 14495
+  },
+  "HECA": {
+    "icao": "HECA",
+    "iata": "CAI",
+    "name": "Cairo International Airport",
+    "lat": 30.111534,
+    "lon": 31.396694,
+    "elevationFt": 322,
+    "longestRunwayFt": 13124
+  },
+  "VIDP": {
+    "icao": "VIDP",
+    "iata": "DEL",
+    "name": "Indira Gandhi International Airport",
+    "lat": 28.55563,
+    "lon": 77.09519,
+    "elevationFt": 777,
+    "longestRunwayFt": 14534
+  },
+  "VTBS": {
+    "icao": "VTBS",
+    "iata": "BKK",
+    "name": "Suvarnabhumi Airport",
+    "lat": 13.6811,
+    "lon": 100.747002,
+    "elevationFt": 5,
+    "longestRunwayFt": 13123
+  },
+  "VHHH": {
+    "icao": "VHHH",
+    "iata": "HKG",
+    "name": "Hong Kong International Airport",
+    "lat": 22.31184,
+    "lon": 113.914862,
+    "elevationFt": 28,
+    "longestRunwayFt": 12467
+  },
+  "RKSI": {
+    "icao": "RKSI",
+    "iata": "ICN",
+    "name": "Incheon International Airport",
+    "lat": 37.469101,
+    "lon": 126.450996,
+    "elevationFt": 23,
+    "longestRunwayFt": 13123
+  },
+  "YSSY": {
+    "icao": "YSSY",
+    "iata": "SYD",
+    "name": "Sydney Kingsford Smith International Airport",
+    "lat": -33.946098,
+    "lon": 151.177002,
+    "elevationFt": 21,
+    "longestRunwayFt": 12999
+  }
+}

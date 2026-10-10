@@ -1,7 +1,10 @@
-import { airports, fleet, flights } from "./data.js";
+import { airports, crewAssignments, fleet, flights, passengerGroups, rotations } from "./data.js";
 
+/** The whole multi-day network. Rotations, passenger groups and crew assignments are additive fields. */
 export function operationalNetwork() {
   const now = Date.now();
+  const at = (offsetMinutes) => new Date(now + offsetMinutes * 60_000).toISOString();
+  const rotationOf = new Map(rotations.map((rotation) => [rotation.id, rotation]));
   return {
     generatedAt: new Date(now).toISOString(),
     airportCount: airports.length,
@@ -9,12 +12,23 @@ export function operationalNetwork() {
     flightCount: flights.length,
     airports,
     aircraft: fleet,
-    flights: flights.map((flight) => ({
-      ...flight,
-      scheduledAt: new Date(now + flight.scheduledOffsetMinutes * 60_000).toISOString(),
-      nextRotation: flights.filter((next) => next.aircraftId === flight.aircraftId && next.scheduledOffsetMinutes > flight.scheduledOffsetMinutes)
-        .sort((a, b) => a.scheduledOffsetMinutes - b.scheduledOffsetMinutes)[0]?.id || null
-    }))
+    flights: flights.map((flight) => {
+      const legs = rotationOf.get(flight.rotationId).flightIds;
+      return {
+        ...flight,
+        scheduledAt: at(flight.scheduledOffsetMinutes),
+        arrivalAt: at(flight.arrivalOffsetMinutes),
+        nextRotation: legs[legs.indexOf(flight.id) + 1] || null
+      };
+    }),
+    rotations: rotations.map((rotation) => ({
+      ...rotation,
+      startsAt: at(rotation.startOffsetMinutes),
+      endsAt: at(rotation.endOffsetMinutes),
+      maintenanceVisits: rotation.maintenanceVisits.map((visit) => ({ ...visit, startsAt: at(visit.startOffsetMinutes), endsAt: at(visit.endOffsetMinutes) }))
+    })),
+    passengerGroups,
+    crewAssignments: crewAssignments.map((crew) => ({ ...crew, reportAt: at(crew.reportOffsetMinutes), releaseAt: at(crew.releaseOffsetMinutes) }))
   };
 }
 

@@ -1,13 +1,9 @@
+import { runwayRequirement } from "./aircraftPerformance.js";
 import { airports, restrictedZones } from "./data.js";
+import { getReferenceAirport } from "./referenceData.js";
+import { distanceNm } from "./geo.js";
 
-const EARTH_RADIUS_NM = 3440.065;
-const toRad = (value) => value * Math.PI / 180;
-
-export function distanceNm(a, b) {
-  const dLat = toRad(b.lat - a.lat), dLon = toRad(b.lon - a.lon);
-  const x = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(a.lat)) * Math.cos(toRad(b.lat)) * Math.sin(dLon / 2) ** 2;
-  return 2 * EARTH_RADIUS_NM * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
-}
+export { distanceNm };
 
 function pointInPolygon(point, polygon) {
   let inside = false;
@@ -65,10 +61,28 @@ export function findRoute({ origin, destination, policy = {} }) {
   return { waypoints, zonesAvoided: crossedZones(origin, destination, forbidden).map((z) => z.id), distanceNm: Math.round(costs[1]) };
 }
 
+/** The runway figures a diversion candidate was checked against, recorded on the plan. */
+export function runwayCheck(icao, aircraftType) {
+  const reference = getReferenceAirport(icao);
+  const requirement = runwayRequirement(aircraftType);
+  const longestRunwayFt = reference?.longestRunwayFt ?? null;
+  return {
+    airport: icao,
+    longestRunwayFt,
+    requiredRunwayFt: requirement.requiredRunwayFt,
+    aircraftType: requirement.aircraftType,
+    category: requirement.category,
+    basis: requirement.basis,
+    runwaySource: reference?.source ?? null,
+    meetsRequirement: longestRunwayFt !== null && longestRunwayFt >= requirement.requiredRunwayFt
+  };
+}
+
 export function diversionOptions(position, aircraft, closedAirports = [], intendedDestination) {
-  const minimumRunway = aircraft?.includes("A350") || aircraft?.includes("B787") ? 8500 : 6000;
-  return airports.filter((airport) => airport.status === "open" && !closedAirports.includes(airport.icao) && airport.runwayFt >= minimumRunway)
-    .map((airport) => ({ ...airport, distanceNm: Math.round(distanceNm(position, airport)), passengerRecoveryNm: intendedDestination ? Math.round(distanceNm(airport, intendedDestination)) : 0 }))
+  return airports.filter((airport) => airport.status === "open" && !closedAirports.includes(airport.icao))
+    .map((airport) => ({ airport, check: runwayCheck(airport.icao, aircraft) }))
+    .filter(({ check }) => check.meetsRequirement)
+    .map(({ airport, check }) => ({ ...airport, distanceNm: Math.round(distanceNm(position, airport)), passengerRecoveryNm: intendedDestination ? Math.round(distanceNm(airport, intendedDestination)) : 0, runwayCheck: check }))
     .filter((airport) => crossedZones(position, airport, restrictedZones.filter((z) => z.severity === "prohibited")).length === 0)
     .sort((a, b) => (a.distanceNm + 1.5 * a.passengerRecoveryNm) - (b.distanceNm + 1.5 * b.passengerRecoveryNm)).slice(0, 3);
 }

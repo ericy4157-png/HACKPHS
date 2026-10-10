@@ -1,6 +1,5 @@
 import type { DecisionResult, Flight, Incident, ScenarioSnapshot } from "../types";
-import { MOCK_INCIDENT } from "../data/mockIncident";
-import { MOCK_FLIGHTS } from "../data/mockFlights";
+import { DEMO_SCENARIOS } from "../data/demoData";
 
 /**
  * API client for Skyward.
@@ -48,28 +47,33 @@ function delay<T>(value: T, ms = 280): Promise<T> {
 }
 
 /**
- * In-memory copy of the mock data so decisions made in mock mode persist for the session.
- * Copies are handed out so React state never shares references with the store.
+ * In-memory copy of the current demo scenario so decisions made in mock mode persist until
+ * "Next scenario". Copies are handed out so React state never shares references with the store.
  */
-let mockFlights: Flight[] = MOCK_FLIGHTS.map((f) => ({ ...f, approvalStatus: "pending" }));
+let mockScenarioIndex = 0;
+const freshDemoFlights = (): Flight[] => DEMO_SCENARIOS[mockScenarioIndex].flights.map((f) => ({ ...f }));
+let mockFlights: Flight[] = freshDemoFlights();
 
 function mockIncident(): Incident {
-  const needsPlan = mockFlights.filter((f) => f.status !== "ok");
+  const needsPlan = mockFlights.filter((f) => f.planId !== undefined);
   const decided = needsPlan.filter((f) => f.approvalStatus !== "pending").length;
+  const approved = needsPlan.filter((f) => f.approvalStatus === "approved").length;
   return {
-    ...MOCK_INCIDENT,
+    ...DEMO_SCENARIOS[mockScenarioIndex].incident,
     recoveryProgress: needsPlan.length ? decided / needsPlan.length : 1,
-    statusLine: `${decided} of ${needsPlan.length} recovery plans decided · demo data`,
+    statusLine: `${approved} of ${needsPlan.length} recovery plans approved · demo data`,
   };
 }
 
+/** Mirrors the backend: accepted plans show as rerouted, rejected ones as disrupted. */
 function mockDecide(flightId: string, decision: "accept" | "reject"): DecisionResult {
   const existing = mockFlights.find((f) => f.id === flightId);
   if (!existing) throw new Error(`Unknown flight ${flightId}`);
+  if (existing.planId === undefined) throw new Error("No recovery plan for this flight in the current scenario");
   const updated: Flight =
     decision === "accept"
       ? { ...existing, approvalStatus: "approved", status: "rerouted" }
-      : { ...existing, approvalStatus: "rejected" };
+      : { ...existing, approvalStatus: "rejected", status: "disrupted" };
   mockFlights = mockFlights.map((f) => (f.id === flightId ? updated : f));
   return { ok: true, flightId, flight: { ...updated }, incident: mockIncident() };
 }
@@ -100,10 +104,14 @@ async function decide(flightId: string, decision: "accept" | "reject"): Promise<
 export const acceptReroute = (flightId: string) => decide(flightId, "accept");
 export const rejectReroute = (flightId: string) => decide(flightId, "reject");
 
-/** Advance the backend to its next seeded disruption scenario. In mock mode, resets all decisions. */
+/**
+ * Advance the backend to its next seeded disruption scenario.
+ * In mock mode, cycles through the frozen scenarios with fresh (all pending) decisions.
+ */
 export async function nextScenario(): Promise<ScenarioSnapshot> {
   if (mockMode) {
-    mockFlights = MOCK_FLIGHTS.map((f) => ({ ...f, approvalStatus: "pending" }));
+    mockScenarioIndex = (mockScenarioIndex + 1) % DEMO_SCENARIOS.length;
+    mockFlights = freshDemoFlights();
     return delay({ incident: mockIncident(), flights: mockFlights.map((f) => ({ ...f })) });
   }
   return requestJson<ScenarioSnapshot>("/api/scenario/next", { method: "POST" });

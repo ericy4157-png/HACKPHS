@@ -1,4 +1,5 @@
 import { airports, flights } from "./data.js";
+import { DEFAULT_WINDOW_HOURS, flightsInWindow } from "./simulation.js";
 
 /**
  * Adapter between the operational snapshot and the globe UI contract in UI/src/types.ts.
@@ -75,8 +76,17 @@ function affectedFlight(flight, plan) {
       before: { departureAt: before.departureAt, arrivalAt: before.arrivalAt, blockMinutes: before.blockMinutes },
       after: { departureAt: after.departureAt, arrivalAt: after.arrivalAt, blockMinutes: after.blockMinutes }
     },
-    requiredChecks: plan.requiredChecks
+    requiredChecks: plan.requiredChecks,
+    diversionRunway: diversionRunwayView(plan.plan.diversionRunwayCheck),
+    swapCheck: deltas.swapCheck
   };
+}
+
+/** Runway figures the chosen diversion was checked against; undefined (omitted) unless the plan diverts. */
+function diversionRunwayView(check) {
+  if (!check) return undefined;
+  const { airport, longestRunwayFt, requiredRunwayFt, aircraftType, category, basis, runwaySource } = check;
+  return { code: toIata(airport), icao: airport, longestRunwayFt, requiredRunwayFt, aircraftType, category, basis, runwaySource };
 }
 
 function unaffectedFlight(flight) {
@@ -91,10 +101,21 @@ function unaffectedFlight(flight) {
   };
 }
 
-/** Every network flight in UI shape; flights outside the disruption are returned with status "ok". */
+/**
+ * Every network flight in UI shape; flights outside the disruption are returned with status "ok".
+ * `dayIndex` (0 = the next 24 hours) and `inWindow` (inside the longest active event window) let
+ * the UI filter the multi-day network later.
+ */
 export function toUiFlights(snapshot) {
   const plans = primaryPlans(snapshot);
-  return flights.map((flight) => (plans.has(flight.id) ? affectedFlight(flight, plans.get(flight.id)) : unaffectedFlight(flight)));
+  const eventWindows = snapshot.activeEvents.map((event) => event.windowHours ?? DEFAULT_WINDOW_HOURS);
+  const windowHours = eventWindows.length ? Math.max(...eventWindows) : DEFAULT_WINDOW_HOURS;
+  const inWindow = new Set(flightsInWindow(windowHours).map((flight) => flight.id));
+  return flights.map((flight) => ({
+    ...(plans.has(flight.id) ? affectedFlight(flight, plans.get(flight.id)) : unaffectedFlight(flight)),
+    dayIndex: flight.dayIndex,
+    inWindow: inWindow.has(flight.id)
+  }));
 }
 
 /** The active scenario as the UI's single Incident. */

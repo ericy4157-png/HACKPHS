@@ -63,6 +63,29 @@ export type Flight = {
   }[];
   schedule?: { before: ScheduleTimes; after: ScheduleTimes };
   requiredChecks?: string[];
+  /** Runway figures the chosen diversion was checked against; only present when the plan diverts. */
+  diversionRunway?: DiversionRunway;
+  /** Why the plan did or did not switch aircraft. */
+  swapCheck?: SwapCheck;
+};
+
+export type DiversionRunway = {
+  code: string;
+  icao: string;
+  longestRunwayFt: number | null;
+  requiredRunwayFt: number;
+  aircraftType: string | null;
+  category: string;
+  basis: string;
+  runwaySource: "ourairports" | "built-in" | null;
+};
+
+export type SwapCheck = {
+  swapped: boolean;
+  fromType: string;
+  toType: string | null;
+  compatible: boolean | null;
+  reason: string;
 };
 
 export type AirportView = {

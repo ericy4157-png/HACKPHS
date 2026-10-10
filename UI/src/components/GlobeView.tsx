@@ -2,8 +2,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Globe, { type GlobeMethods } from "react-globe.gl";
 import type { Airport, ArcDatum, Flight, PointDatum } from "../types";
 import type { SkyMode } from "../hooks/useDayNight";
-import { AIRPORT_LIST } from "../data/airports";
-
 type Props = {
   flights: Flight[];
   selectedId: string | null;
@@ -95,11 +93,6 @@ function affectedAirports(flights: Flight[]): Airport[] {
     if (f.status === "ok") continue;
     for (const view of [f.originAirport, f.destinationAirport]) {
       if (view) byCode.set(view.code, { iata: view.code, name: view.name, city: view.city, lat: view.lat, lng: view.lng });
-    }
-    // Mock flights carry only codes; resolve them from the local US airport list.
-    for (const code of [f.origin, f.destination]) {
-      const known = AIRPORT_LIST.find((a) => a.iata === code);
-      if (!byCode.has(code) && known) byCode.set(code, known);
     }
   }
   return [...byCode.values()];

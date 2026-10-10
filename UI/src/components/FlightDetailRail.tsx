@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { DecisionResult, Flight } from "../types";
 import { acceptReroute, isMockMode, rejectReroute } from "../api/client";
-import { airportByIata } from "../data/mockFlights";
 
 type Props = {
   flight: Flight;
@@ -20,28 +19,12 @@ function formatTime(iso: string): string {
   return new Date(iso).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
 }
 
-/** Mock flights only have coordinates, so match known hubs to build a readable "via" line. */
-function mockProposedLabel(flight: Flight): string {
-  const hits = [flight.origin, flight.destination, "ORD", "DFW", "DEN", "ATL", "CLT"];
-  const codes = flight.proposedPath
-    .map((coord) => {
-      for (const code of hits) {
-        const a = airportByIata(code);
-        if (Math.abs(a.lat - coord[0]) < 0.3 && Math.abs(a.lng - coord[1]) < 0.3) return code;
-      }
-      return null;
-    })
-    .filter((x): x is string => Boolean(x));
-  const unique = codes.filter((c, i) => codes.indexOf(c) === i);
-  return unique.length >= 2 ? unique.join(" → ") : `${flight.origin} → via hub → ${flight.destination}`;
-}
-
 export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
   const [busy, setBusy] = useState<"accept" | "reject" | null>(null);
   const [note, setNote] = useState<string | null>(null);
 
-  const originCity = flight.originAirport?.city ?? airportByIata(flight.origin).city;
-  const destCity = flight.destinationAirport?.city ?? airportByIata(flight.destination).city;
+  const originCity = flight.originAirport?.city ?? flight.origin;
+  const destCity = flight.destinationAirport?.city ?? flight.destination;
   const hasPlan = flight.status !== "ok";
   const decided = flight.approvalStatus !== undefined && flight.approvalStatus !== "pending";
 
@@ -100,7 +83,7 @@ export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
         {hasPlan && (
           <div className="path-row proposed">
             <span className="path-label">Proposed</span>
-            <span>{flight.proposedRoute ?? mockProposedLabel(flight)}</span>
+            <span>{flight.proposedRoute ?? `${flight.origin} → ${flight.destination}`}</span>
           </div>
         )}
       </div>
