@@ -1,0 +1,515 @@
+:root {
+  --font-display: "Syne", system-ui, sans-serif;
+  --font-body: "DM Sans", system-ui, sans-serif;
+
+  --sky-day-top: #1a6bb5;
+  --sky-day-mid: #3d9ee8;
+  --sky-day-bottom: #87c8f5;
+  --sky-night-top: #04060c;
+  --sky-night-mid: #0a1224;
+  --sky-night-bottom: #152238;
+
+  --ink: #0b1220;
+  --ink-soft: rgba(11, 18, 32, 0.72);
+  --foam: #f4f7fb;
+  --foam-soft: rgba(244, 247, 251, 0.78);
+  --accent: #e8b84a;
+  --accent-hot: #ff6b4a;
+  --route: #5ee1a8;
+  --route-muted: rgba(244, 247, 251, 0.35);
+  --glass: rgba(255, 255, 255, 0.1);
+  --glass-border: rgba(255, 255, 255, 0.22);
+  --glass-strong: rgba(8, 14, 28, 0.45);
+
+  --rail-w: min(280px, 28vw);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  color: var(--foam);
+  -webkit-font-smoothing: antialiased;
+  background: #0a1224;
+}
+
+button {
+  font: inherit;
+  cursor: pointer;
+  border: none;
+  background: none;
+  color: inherit;
+}
+
+.sky-shell {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  color: var(--foam);
+}
+
+.sky-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  transition: background 1.6s var(--ease);
+}
+
+.sky-shell[data-mode="day"] .sky-backdrop {
+  background:
+    radial-gradient(120% 80% at 50% -10%, rgba(255, 255, 255, 0.28), transparent 55%),
+    linear-gradient(180deg, var(--sky-day-top), var(--sky-day-mid) 48%, var(--sky-day-bottom));
+}
+
+.sky-shell[data-mode="night"] .sky-backdrop {
+  background:
+    radial-gradient(90% 60% at 70% 10%, rgba(80, 120, 200, 0.18), transparent 50%),
+    linear-gradient(180deg, var(--sky-night-top), var(--sky-night-mid) 55%, var(--sky-night-bottom));
+}
+
+.sky-stars {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transition: opacity 1.6s var(--ease);
+  pointer-events: none;
+  background-image:
+    radial-gradient(1px 1px at 12% 18%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 28% 42%, rgba(255, 255, 255, 0.65), transparent),
+    radial-gradient(1.5px 1.5px at 48% 12%, rgba(255, 255, 255, 0.85), transparent),
+    radial-gradient(1px 1px at 63% 33%, rgba(255, 255, 255, 0.55), transparent),
+    radial-gradient(1px 1px at 78% 22%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1.5px 1.5px at 88% 48%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 16% 68%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 36% 78%, rgba(255, 255, 255, 0.75), transparent),
+    radial-gradient(1px 1px at 54% 62%, rgba(255, 255, 255, 0.45), transparent),
+    radial-gradient(1.5px 1.5px at 72% 74%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1px 1px at 91% 66%, rgba(255, 255, 255, 0.55), transparent);
+}
+
+.sky-shell[data-mode="night"] .sky-stars {
+  opacity: 1;
+}
+
+.sky-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: var(--rail-w) 1fr var(--rail-w);
+  grid-template-rows: auto 1fr;
+  width: 100%;
+  height: 100%;
+  gap: 0 1rem;
+  padding: 1.25rem 1.25rem 1.5rem;
+}
+
+.brand {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  pointer-events: none;
+}
+
+.brand-mark {
+  font-family: var(--font-display);
+  font-weight: 800;
+  font-size: clamp(2.4rem, 5.5vw, 4.2rem);
+  letter-spacing: -0.04em;
+  line-height: 0.9;
+  margin: 0;
+  text-shadow: 0 2px 24px rgba(0, 0, 0, 0.25);
+}
+
+.brand-tag {
+  font-size: 0.78rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.72;
+  margin: 0;
+  align-self: end;
+  padding-bottom: 0.35rem;
+}
+
+.globe-stage {
+  grid-column: 2;
+  grid-row: 2;
+  position: relative;
+  min-height: 0;
+  min-width: 0;
+}
+
+.globe-stage canvas {
+  outline: none;
+}
+
+.rail {
+  grid-row: 2;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-height: 0;
+  padding: 1.1rem 1.15rem;
+  border-radius: 18px;
+  background: var(--glass-strong);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+  overflow: auto;
+}
+
+.rail-left {
+  grid-column: 1;
+}
+
+.rail-right {
+  grid-column: 3;
+}
+
+.rail-kicker {
+  margin: 0;
+  font-size: 0.7rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.rail-title {
+  margin: 0.2rem 0 0;
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 1.25rem;
+  letter-spacing: -0.02em;
+  line-height: 1.15;
+}
+
+.rail-body {
+  margin: 0;
+  font-size: 0.92rem;
+  line-height: 1.45;
+  color: var(--foam-soft);
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.metric {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.metric-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.metric-value {
+  font-family: var(--font-display);
+  font-size: 1.55rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--accent), var(--route));
+  transition: width 0.8s var(--ease);
+}
+
+.status-pulse {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-top: auto;
+  padding-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--foam-soft);
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--route);
+  box-shadow: 0 0 0 0 rgba(94, 225, 168, 0.6);
+  animation: pulse 1.8s var(--ease) infinite;
+}
+
+@keyframes pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(94, 225, 168, 0.55);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(94, 225, 168, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(94, 225, 168, 0);
+  }
+}
+
+.empty-select {
+  margin: auto 0;
+  text-align: left;
+}
+
+.empty-select h3 {
+  margin: 0.35rem 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.flight-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.callsign {
+  font-family: var(--font-display);
+  font-size: 1.8rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  margin: 0;
+}
+
+.route-line {
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+}
+
+.status-chip {
+  display: inline-flex;
+  align-self: flex-start;
+  margin-top: 0.35rem;
+  padding: 0.2rem 0.55rem;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.status-chip[data-status="disrupted"] {
+  color: #ffb4a8;
+  border-color: rgba(255, 107, 74, 0.45);
+}
+
+.status-chip[data-status="rerouting"] {
+  color: #ffe09a;
+  border-color: rgba(232, 184, 74, 0.5);
+}
+
+.status-chip[data-status="rerouted"] {
+  color: #b8f5d6;
+  border-color: rgba(94, 225, 168, 0.45);
+}
+
+.path-compare {
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.path-row {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 0.5rem;
+  align-items: baseline;
+  font-size: 0.9rem;
+}
+
+.path-label {
+  font-size: 0.68rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.path-row.original span:last-child {
+  opacity: 0.65;
+}
+
+.path-row.proposed span:last-child {
+  color: var(--route);
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.6rem;
+  margin-top: auto;
+  padding-top: 0.75rem;
+}
+
+.btn {
+  padding: 0.7rem 0.85rem;
+  border-radius: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  transition: transform 0.2s var(--ease), background 0.2s var(--ease), opacity 0.2s;
+}
+
+.btn:active {
+  transform: scale(0.98);
+}
+
+.btn-primary {
+  background: var(--route);
+  color: #062016;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.btn-ghost {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid var(--glass-border);
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.loading-veil {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 12, 24, 0.35);
+  backdrop-filter: blur(4px);
+  font-family: var(--font-display);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  font-size: 0.85rem;
+  pointer-events: none;
+}
+
+.legend {
+  position: absolute;
+  left: 50%;
+  bottom: 0.35rem;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 1rem;
+  padding: 0.4rem 0.85rem;
+  border-radius: 999px;
+  background: rgba(8, 14, 28, 0.4);
+  border: 1px solid var(--glass-border);
+  backdrop-filter: blur(10px);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  pointer-events: none;
+}
+
+.legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+
+.swatch.original {
+  background: var(--route-muted);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
+}
+
+.swatch.proposed {
+  background: var(--route);
+}
+
+.swatch.flight {
+  background: var(--accent);
+}
+
+@media (max-width: 900px) {
+  .sky-content {
+    grid-template-columns: 1fr;
+    grid-template-rows: auto auto 1fr auto;
+    gap: 0.75rem;
+    padding: 0.85rem;
+    overflow: auto;
+  }
+
+  .brand {
+    grid-column: 1;
+  }
+
+  .brand-mark {
+    font-size: 2.2rem;
+  }
+
+  .brand-tag {
+    display: none;
+  }
+
+  .rail-left {
+    grid-column: 1;
+    grid-row: 2;
+    max-height: 160px;
+  }
+
+  .globe-stage {
+    grid-column: 1;
+    grid-row: 3;
+    min-height: 48vh;
+  }
+
+  .rail-right {
+    grid-column: 1;
+    grid-row: 4;
+    max-height: 220px;
+  }
+}
