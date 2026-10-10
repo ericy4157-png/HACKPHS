@@ -1,15 +1,41 @@
-import type { ScenarioSnapshot } from "../types";
-import snapshot from "./demoSnapshot.json";
+import type { Flight, Incident, ScenarioSnapshot } from "../types";
 
 /**
- * Offline demo data: a frozen copy of the backend's four seeded scenarios, as returned by
- * GET /api/incident + GET /api/flights (scenario 1) and POST /api/scenario/next (scenarios 2-4).
- * The fallback therefore shows the same 32-airport network as the API.
+ * Offline demo data: a compact freeze of the backend's four seeded scenarios.
+ * Loaded lazily from /demo/demoSnapshot.json (in UI/public) so it is not bundled into the JS chunk.
  *
- * To refresh it, start the API fresh, capture those responses in order, and save them into
- * demoSnapshot.json under "scenarios". The UI never imports backend code.
+ * Format:
+ *   { capturedAt, baseFlights: compact markers[], scenarios: [{ incident, affectedFlights[] }] }
+ *
+ * Rebuild with `npm run freeze:demo` from the repo root.
  */
-export const DEMO_CAPTURED_AT: string = snapshot.capturedAt;
-// Through `unknown`: TypeScript infers JSON paths as number[][], which it will not compare
-// directly with the [lat, lng] tuples once the snapshot holds the full multi-day network.
-export const DEMO_SCENARIOS: ScenarioSnapshot[] = snapshot.scenarios as unknown as ScenarioSnapshot[];
+
+type CompactDemoFile = {
+  capturedAt: string;
+  baseFlights: Flight[];
+  scenarios: { incident: Incident; affectedFlights: Flight[] }[];
+};
+
+let cached: ScenarioSnapshot[] | null = null;
+
+function expandScenario(
+  baseFlights: Flight[],
+  incident: Incident,
+  affectedFlights: Flight[],
+): ScenarioSnapshot {
+  const byId = new Map(baseFlights.map((f) => [f.id, { ...f }]));
+  for (const flight of affectedFlights) {
+    byId.set(flight.id, { ...flight });
+  }
+  return { incident, flights: [...byId.values()] };
+}
+
+/** Load and expand the compact demo file into full ScenarioSnapshot objects. */
+export async function loadDemoScenarios(): Promise<ScenarioSnapshot[]> {
+  if (cached) return cached;
+  const res = await fetch("/demo/demoSnapshot.json");
+  if (!res.ok) throw new Error(`Demo snapshot unavailable (${res.status})`);
+  const file = (await res.json()) as CompactDemoFile;
+  cached = file.scenarios.map((s) => expandScenario(file.baseFlights, s.incident, s.affectedFlights));
+  return cached;
+}

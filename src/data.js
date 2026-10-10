@@ -1,5 +1,6 @@
 import { airports } from "./referenceData.js";
 import { generateNetwork } from "./networkGenerator.js";
+import { buildNetworkIndex } from "./networkIndex.js";
 
 // Airport positions and runway lengths come from the OurAirports reference snapshot when
 // it is present, with built-in values as the fallback (see src/referenceData.js).
@@ -23,3 +24,6 @@ export const fleet = network.fleet;
 export const rotations = network.rotations;
 export const passengerGroups = network.passengerGroups;
 export const crewAssignments = network.crewAssignments;
+
+/** Lookups for planner and API code; rebuilt only when the process reloads the network. */
+export const networkIndex = buildNetworkIndex(network, airports);

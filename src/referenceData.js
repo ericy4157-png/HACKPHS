@@ -56,7 +56,7 @@ if (error) console.warn(`[skyward] Airport reference snapshot unavailable (${err
 /** True when airport data came from the reference snapshot rather than the built-in fallback. */
 export const referenceSnapshotLoaded = snapshot !== null;
 
-/** The 32 network airports. Objects are shared and mutable (server.js marks closures on them). */
+/** Network airports from built-ins merged with the reference snapshot. Objects are shared and mutable. */
 export const airports = builtInAirports.map((builtIn) => mergeAirport(builtIn, snapshot?.[builtIn.icao]));
 
 /**

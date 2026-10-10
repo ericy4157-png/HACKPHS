@@ -8,8 +8,12 @@ const flightById = new Map(flights.map((flight) => [flight.id, flight]));
 
 /** Where a tail sits after its rotation ends: last airport and the time it is ready there. */
 function endOfRotation(tailId) {
-  const last = flightById.get(rotations.find((rotation) => rotation.tailId === tailId).flightIds.at(-1));
   const tail = fleet.find((item) => item.id === tailId);
+  const rotation = rotations.find((item) => item.tailId === tailId);
+  if (!rotation?.flightIds.length) {
+    return { airport: tail.parkedAt || tail.location, readyAt: -Infinity };
+  }
+  const last = flightById.get(rotation.flightIds.at(-1));
   return { airport: last.destination, readyAt: last.arrivalOffsetMinutes + tail.minimumTurnMinutes };
 }
 
@@ -22,13 +26,14 @@ test("a reroute brief maps the planned nonstop and the diversion layover", () =>
   const result = simulateDisaster({ airport: "KMIA", radiusNm: 5, severity: "severe" });
   const plan = result.plans.find((item) => item.flightId === "SKY820");
   assert.equal(plan.comparison.before.waypoints.map((point) => point.icao).join(">"), "KDFW>KMIA");
-  assert.ok(plan.comparison.after.waypoints.some((point) => point.icao === "KATL" && point.kind === "layover"));
-  assert.equal(plan.comparison.deltas.newLayovers[0], "KATL");
+  const layover = plan.comparison.deltas.newLayovers[0];
+  assert.ok(layover, "diversion adds a layover");
+  assert.ok(plan.comparison.after.waypoints.some((point) => point.icao === layover && point.kind === "layover"));
   assert.equal(plan.comparison.deltas.geometryChanged, true);
   assert.equal(plan.comparison.deltas.aircraftSwapped, false);
   assert.match(plan.comparison.deltas.timing, /KMIA/);
   assert.match(plan.comparison.deltas.aircraft, /No plane switch/);
-  assert.match(plan.comparison.deltas.layover, /KATL/);
+  assert.match(plan.comparison.deltas.layover, new RegExp(layover));
   assert.equal(plan.plan.changeSummary.layover, plan.comparison.deltas.layover);
 });
 
@@ -55,17 +60,20 @@ test("a tail on the ground at the flight's airport is proposed as the replacemen
 });
 
 test("a free tail based elsewhere is never proposed", () => {
-  // After every rotation has ended all tails are free; none of them ends at KBOS.
-  const latest = Math.max(...fleet.map((tail) => endOfRotation(tail.id).readyAt));
-  assert.ok(!fleet.some((tail) => endOfRotation(tail.id).airport === "KBOS"));
-  const comparison = buildComparison({ flight: delayedLeg("KBOS", "KJFK", latest + 60), action: "delay", delayMinutes: 90 });
+  // After every rotation has ended all operating tails are free; pick an airport none ends at.
+  const operating = fleet.filter((tail) => !tail.reserve);
+  const latest = Math.max(...operating.map((tail) => endOfRotation(tail.id).readyAt));
+  const occupied = new Set(operating.map((tail) => endOfRotation(tail.id).airport));
+  const emptyAirport = ["KBOS", "KIAD", "KPDX", "PANC"].find((icao) => !occupied.has(icao));
+  assert.ok(emptyAirport, "need an airport with no idle operating tail");
+  const comparison = buildComparison({ flight: delayedLeg(emptyAirport, "KJFK", latest + 60), action: "delay", delayMinutes: 90 });
   const { swapCheck } = comparison.deltas;
   assert.equal(comparison.deltas.aircraftSwapped, false);
   assert.deepEqual(swapCheck.busyTailsSkipped, []);
   assert.ok(swapCheck.tailsElsewhereSkipped.length > 0);
-  assert.ok(swapCheck.tailsElsewhereSkipped.every((item) => item.location !== "KBOS"));
-  assert.match(swapCheck.reason, /is on the ground at KBOS and free when needed/);
-  assert.match(swapCheck.reason, /Free but not on the ground at KBOS in time/);
+  assert.ok(swapCheck.tailsElsewhereSkipped.every((item) => item.location !== emptyAirport));
+  assert.match(swapCheck.reason, new RegExp(`is on the ground at ${emptyAirport} and free when needed`));
+  assert.match(swapCheck.reason, new RegExp(`Free but not on the ground at ${emptyAirport} in time`));
 });
 
 test("a tail that lands at the airport too close to the needed time is not proposed", () => {
@@ -88,13 +96,11 @@ test("a cancellation protects passengers through a new connection", () => {
   assert.match(plan.comparison.deltas.swapCheck.reason, /is on the ground at LFPG and free when needed/);
 });
 
-test("SKY101 in scenario 2 is held for manual review because no alternate meets the fuel reserve", () => {
+test("SKY101 in a London windstorm finds a fuel-legal diversion in the mid-size network", () => {
   const plan = simulateDisaster({ type: "windstorm", airport: "EGLL", radiusNm: 45, severity: "severe" }).plans.find((item) => item.flightId === "SKY101");
-  assert.equal(plan.action, "hold_for_human_review");
-  assert.match(plan.plan.reason, /no alternate meets the fuel reserve/);
-  assert.deepEqual(plan.plan.alternateFuelChecks.map((check) => check.airport), ["LFPG", "EHAM", "EDDF"]);
-  assert.ok(plan.plan.alternateFuelChecks.every((check) => check.fuelMarginMinutes < 0));
-  assert.equal(plan.plan.reroute, undefined);
+  assert.equal(plan.action, "reroute");
+  assert.ok(plan.plan.diversionAirport);
+  assert.ok(plan.plan.reroute?.operationalAssessment.fuelMarginMinutes >= 0);
   assert.equal(plan.approvalStatus, "pending");
 });
 

@@ -11,10 +11,11 @@ import { airports, getReferenceAirport, readAirportSnapshot, referenceSnapshotLo
 
 const run = promisify(execFile);
 
-test("all 32 network airports load from the snapshot with finite coordinates", () => {
+test("all network airports load from the snapshot with finite coordinates", () => {
   assert.equal(referenceSnapshotLoaded, true, "data/reference/airports.json should be committed and valid");
-  assert.equal(airports.length, 32);
-  assert.equal(new Set(airports.map((airport) => airport.icao)).size, 32);
+  assert.equal(airports.length, builtInAirports.length);
+  assert.equal(new Set(airports.map((airport) => airport.icao)).size, builtInAirports.length);
+  assert.ok(airports.length >= 60, "mid-size network has at least 60 airports");
   for (const airport of airports) {
     assert.ok(Number.isFinite(airport.lat) && Number.isFinite(airport.lon), `${airport.icao} coordinates`);
     assert.ok(airport.runwayFt > 0, `${airport.icao} runway`);

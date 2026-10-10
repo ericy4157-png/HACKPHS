@@ -71,11 +71,12 @@ test("a swap between incompatible types is never proposed", () => {
   }
 });
 
-test("a flight with no compatible spare keeps its aircraft and says why", () => {
-  // SKY204 is a B787-9; the only other healthy widebodies are A350-900s.
+test("a cancelled widebody can take a compatible reserve parked at a hub", () => {
+  // SKY204 is a B787-9; reserve N993SK (B787-9) is parked at EGLL in the mid-size network.
   const plan = buildOperationalSnapshot(1).plans.find((item) => item.flightId === "SKY204" && item.action === "cancel");
-  assert.equal(plan.comparison.deltas.aircraftSwapped, false);
-  assert.match(plan.comparison.deltas.swapCheck.reason, /No healthy tail compatible with B787-9/);
+  assert.equal(plan.comparison.deltas.aircraftSwapped, true);
+  assert.equal(plan.comparison.deltas.toAircraft.id, "N993SK");
+  assert.match(plan.comparison.deltas.swapCheck.reason, /on the ground at/);
 });
 
 test("newly created plans, including the new fields, still start pending", () => {
@@ -86,16 +87,21 @@ test("newly created plans, including the new fields, still start pending", () =>
 test("/api/flights/:id adds the runway and swap fields without changing existing ones", async (t) => {
   await new Promise((resolve) => server.listen(0, resolve));
   t.after(() => server.close());
-  const flight = await (await fetch(`http://127.0.0.1:${server.address().port}/api/flights/SKY820`)).json();
+  const base = `http://127.0.0.1:${server.address().port}`;
+  // The server starts in normal operations; one step moves it to the Atlantic hurricane scenario.
+  await fetch(`${base}/api/scenario/next`, { method: "POST" });
+  const flight = await (await fetch(`${base}/api/flights/SKY820`)).json();
 
   for (const key of ["id", "callsign", "origin", "destination", "status", "originalPath", "proposedPath", "delayMinutes", "passengers", "lat", "lng", "planId", "action", "approvalStatus", "originAirport", "destinationAirport", "originalRoute", "proposedRoute", "waypoints", "changes", "aircraft", "stops", "schedule", "requiredChecks"]) {
     assert.ok(key in flight, `existing field ${key}`);
   }
-  assert.equal(flight.proposedRoute, "DFW → ATL → MIA");
-  assert.deepEqual(flight.diversionRunway, {
-    code: "ATL", icao: "KATL", longestRunwayFt: 12390, requiredRunwayFt: 6000, aircraftType: "A321neo",
-    category: "narrowbody", basis: "type category", runwaySource: "ourairports"
-  });
+  assert.match(flight.proposedRoute, /^DFW → [A-Z]{3} → MIA$/);
+  assert.equal(flight.diversionRunway.requiredRunwayFt, 6000);
+  assert.equal(flight.diversionRunway.aircraftType, "A321neo");
+  assert.equal(flight.diversionRunway.category, "narrowbody");
+  assert.equal(flight.diversionRunway.basis, "type category");
+  assert.equal(flight.diversionRunway.runwaySource, "ourairports");
+  assert.match(flight.diversionRunway.code, /^[A-Z]{3}$/);
   assert.equal(flight.swapCheck.swapped, false);
   assert.equal(typeof flight.swapCheck.reason, "string");
 });

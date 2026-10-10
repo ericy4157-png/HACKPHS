@@ -1,18 +1,12 @@
 import { useState } from "react";
 import type { DecisionResult, Flight } from "../types";
 import { acceptReroute, isMockMode, rejectReroute } from "../api/client";
+import { ACTION_LABEL } from "../flightLabels";
 
 type Props = {
   flight: Flight;
   onDecision: (result: DecisionResult) => void;
   onBack: () => void;
-};
-
-const ACTION_LABEL: Record<NonNullable<Flight["action"]>, string> = {
-  reroute: "Divert",
-  delay: "Delay",
-  cancel: "Cancel & rebook",
-  hold_for_human_review: "Manual review",
 };
 
 function formatTime(iso: string): string {
@@ -55,14 +49,14 @@ export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
           {flight.origin} → {flight.destination}
         </div>
         <span className="status-chip" data-status={flight.status}>
-          {flight.action ? `${ACTION_LABEL[flight.action]} · ${flight.status}` : flight.status}
+          {flight.action ? `${ACTION_LABEL[flight.action]} · ${decided ? flight.approvalStatus : "awaiting decision"}` : flight.status}
         </span>
       </div>
 
       <div className="metric-row">
         <div className="metric">
           <span className="metric-label">Delay</span>
-          <span className="metric-value">+{flight.delayMinutes}m</span>
+          <span className="metric-value">+{flight.delayMinutes ?? 0}m</span>
         </div>
         <div className="metric">
           <span className="metric-label">Souls</span>
@@ -87,6 +81,10 @@ export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
           </div>
         )}
       </div>
+
+      {flight.supersededReason && !decided && (
+        <p className="rail-body">Plan updated because {flight.supersededReason}.</p>
+      )}
 
       {flight.changes && (
         <div className="change-list">
@@ -116,6 +114,22 @@ export function FlightDetailRail({ flight, onDecision, onBack }: Props) {
                 {stop.code} · {stop.groundMinutes} min on the ground, {formatTime(stop.arrivalAt)}–{formatTime(stop.departureAt)}
               </p>
             ))}
+          </div>
+        </div>
+      )}
+
+      {flight.layers && flight.layers.length > 1 && (
+        <div className="change-list">
+          <div className="change-item">
+            <span className="path-label">Knock-on</span>
+            {flight.layers
+              .filter((layer) => layer.index > 0)
+              .slice(0, 6)
+              .map((layer) => (
+                <p key={`${layer.index}-${layer.kind}-${layer.flightId || layer.groupId}`} className="change-meta">
+                  {layer.summary}
+                </p>
+              ))}
           </div>
         </div>
       )}

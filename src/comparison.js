@@ -1,11 +1,11 @@
-import { airports, fleet, flights, restrictedZones, rotations } from "./data.js";
+import { airports, fleet, networkIndex, restrictedZones } from "./data.js";
 import { crossedZones, distanceNm } from "./routing.js";
 import { swapCompatibility } from "./aircraftPerformance.js";
 
 const CRUISE_NM_PER_MIN = 8.2;
 const TAXI_MINUTES = 20;
 
-const byIcao = (icao) => airports.find((item) => item.icao === icao);
+const byIcao = (icao) => networkIndex.airportByIcao.get(icao);
 const airMinutes = (nm) => Math.max(0, Math.round(nm / CRUISE_NM_PER_MIN));
 const blockMinutes = (nm) => airMinutes(nm) + TAXI_MINUTES;
 const addMinutes = (value, minutes) => new Date(new Date(value).getTime() + minutes * 60_000).toISOString();
@@ -36,10 +36,13 @@ const noSwap = (flight, reason) => ({ swapped: false, fromType: flight.aircraft,
  * in minutes from now, or null when the tail is free for that whole time.
  */
 function busyWith(tail, fromOffset, untilOffset) {
-  const leg = flights.find((item) => item.aircraftId === tail.id && item.scheduledOffsetMinutes < untilOffset && item.arrivalOffsetMinutes > fromOffset);
+  const leg = (networkIndex.legsByTail.get(tail.id) || []).find(
+    (item) => item.scheduledOffsetMinutes < untilOffset && item.arrivalOffsetMinutes > fromOffset
+  );
   if (leg) return leg.id;
-  const visit = rotations.find((rotation) => rotation.tailId === tail.id)?.maintenanceVisits
-    .find((item) => item.startOffsetMinutes < untilOffset && item.endOffsetMinutes > fromOffset);
+  const visit = (networkIndex.visitsByTail.get(tail.id) || []).find(
+    (item) => item.startOffsetMinutes < untilOffset && item.endOffsetMinutes > fromOffset
+  );
   return visit ? visit.id : null;
 }
 
@@ -47,9 +50,14 @@ function busyWith(tail, fromOffset, untilOffset) {
  * Where a tail is on the ground at `atOffset` (minutes from now), read from its rotation:
  * { airport, readyAt } from its latest arrival at or before that time (ready after its minimum
  * turn), or its first departure airport if it has not flown yet. Null while it is airborne.
+ * Reserve tails with no legs stay parked at fleet.location (or the first known airport).
  */
 function groundPosition(tail, atOffset) {
-  const legs = rotations.find((rotation) => rotation.tailId === tail.id).flightIds.map((id) => flights.find((item) => item.id === id));
+  const legs = networkIndex.legsByTail.get(tail.id) || [];
+  if (!legs.length) {
+    const parked = tail.location || tail.parkedAt || null;
+    return parked ? { airport: parked, readyAt: -Infinity } : null;
+  }
   if (legs.some((leg) => leg.scheduledOffsetMinutes < atOffset && leg.arrivalOffsetMinutes > atOffset)) return null;
   const landed = legs.filter((leg) => leg.arrivalOffsetMinutes <= atOffset).at(-1);
   if (!landed) return { airport: legs[0].origin, readyAt: -Infinity };
@@ -69,9 +77,16 @@ function whereText({ tailId, position, fromOffset }, swapIcao) {
  * Same type is preferred over same family.
  * Returns { tail, swapCheck }; tail is null when no such tail exists.
  */
-function replacementTail(flight, swapIcao, needed) {
-  const healthy = fleet.filter((item) => item.id !== flight.aircraftId && item.maintenanceDueInHours >= 8);
-  const compatible = healthy.filter((item) => swapCompatibility(flight.aircraft, item.type).compatible);
+function replacementTail(flight, swapIcao, needed, { excludeTailIds = new Set() } = {}) {
+  const healthy = fleet.filter(
+    (item) => item.id !== flight.aircraftId && item.maintenanceDueInHours >= 8 && !excludeTailIds.has(item.id)
+  );
+  const compatible = healthy.filter((item) => {
+    if (!swapCompatibility(flight.aircraft, item.type).compatible) return false;
+    // Seat capacity: the replacement must seat every passenger on the disrupted leg.
+    if ((item.seats ?? 0) < flight.passengers) return false;
+    return true;
+  });
   const busy = compatible.map((item) => ({ tailId: item.id, busyWith: busyWith(item, needed.fromOffset, needed.untilOffset) })).filter((item) => item.busyWith);
   const free = compatible.filter((item) => !busy.some((entry) => entry.tailId === item.id));
   const located = free.map((item) => ({ tail: item, position: groundPosition(item, needed.fromOffset) }));
@@ -211,16 +226,17 @@ function proposedWaypoints(flight, origin, divert, destination, routeWaypoints) 
  * Build the planned-versus-proposed itinerary for one review item.
  * Times, aircraft swaps, and layovers are modeled recovery suggestions, not clearances.
  */
-export function buildComparison({ flight, action, delayMinutes = 0, diversionAirport, reroute, closedAirports = [] }) {
+export function buildComparison({ flight, action, delayMinutes = 0, diversionAirport, reroute, closedAirports = [], excludeTailIds = new Set() } = {}) {
   const { aircraft, itinerary: before } = baseline(flight);
   const origin = byIcao(flight.origin);
   const destination = byIcao(flight.destination);
+  const swapOpts = { excludeTailIds };
 
   if (action === "delay") {
     const swapNeeded = flight.status !== "airborne" && aircraft.maintenanceDueInHours < 8;
     const delayedDeparture = flight.scheduledOffsetMinutes + delayMinutes;
     const { tail: swap, swapCheck } = swapNeeded
-      ? replacementTail(flight, origin.icao, { fromOffset: delayedDeparture, untilOffset: delayedDeparture + before.blockMinutes })
+      ? replacementTail(flight, origin.icao, { fromOffset: delayedDeparture, untilOffset: delayedDeparture + before.blockMinutes }, swapOpts)
       : { tail: null, swapCheck: noSwap(flight, `No plane switch needed. Maintenance is due in ${aircraft.maintenanceDueInHours} flight hours.`) };
     const after = sameTrack(before, swap?.id || flight.aircraftId, swap?.type || flight.aircraft, "Delayed route", `${origin.icao} → ${destination.icao} on the same track`);
     after.departureAt = flight.status === "airborne" ? before.departureAt : addMinutes(before.departureAt, delayMinutes);
@@ -251,7 +267,7 @@ export function buildComparison({ flight, action, delayMinutes = 0, diversionAir
     const longestGround = hub ? Math.max(...fleet.map((item) => item.minimumTurnMinutes), 95) : 0;
     const { tail: spare, swapCheck } = replacementTail(flight, origin.icao, {
       fromOffset: recoveryDeparture, untilOffset: recoveryDeparture + firstBlock + longestGround + secondBlock
-    });
+    }, swapOpts);
     const ground = hub ? Math.max(spare?.minimumTurnMinutes || 75, 95) : 0;
     const departureAt = addMinutes(before.departureAt, 18 * 60);
     const layoverArrival = addMinutes(departureAt, firstBlock);
@@ -290,7 +306,7 @@ export function buildComparison({ flight, action, delayMinutes = 0, diversionAir
     const onwardNm = distanceNm(divert, destination);
     const onwardAir = airMinutes(onwardNm);
     const { tail: spare, swapCheck } = aircraft.maintenanceDueInHours < 12
-      ? replacementTail(flight, divert.icao, { fromOffset: divertAir, untilOffset: divertAir + Math.max(aircraft.minimumTurnMinutes, 110) + onwardAir + TAXI_MINUTES })
+      ? replacementTail(flight, divert.icao, { fromOffset: divertAir, untilOffset: divertAir + Math.max(aircraft.minimumTurnMinutes, 110) + onwardAir + TAXI_MINUTES }, swapOpts)
       : { tail: null, swapCheck: noSwap(flight, `No plane switch needed. Maintenance is due in ${aircraft.maintenanceDueInHours} flight hours.`) };
     const onwardId = spare?.id || flight.aircraftId;
     const onwardType = spare?.type || flight.aircraft;

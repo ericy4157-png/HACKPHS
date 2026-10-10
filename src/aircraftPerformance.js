@@ -50,6 +50,15 @@ export const CONTINGENCY_FRACTION = 0.05;
 export const RESERVE_MINUTES = 45;
 export const MAINTENANCE_CHECK_MINUTES = 8 * 60;
 export const MAINTENANCE_CHECK_STATIONS = ["KJFK", "KORD", "KDFW", "KATL", "KLAX", "EGLL", "LFPG", "EDDF", "LTFM", "OMDB", "VHHH", "WSSS", "RJTT"];
+/** Baseline day: the tails closest to a maintenance limit each lose one departure to an unscheduled snag. */
+export const BASELINE_MAINTENANCE_TAILS = 3;
+export const UNSCHEDULED_MAINTENANCE_DELAY_MINUTES = 75;
+/** Live ops clock: wall tick → sim minutes advanced; keep about this many ordinary (non-disaster) ops issues open. */
+export const OPS_TICK_WALL_MS = 12_000;
+export const OPS_TICK_SIM_MINUTES = 5;
+export const OPS_MINI_TARGET_OPEN = 2;
+export const OPS_MINI_DELAY_MINUTES = [20, 35, 45, 60, 75, 90];
+export const OPS_SESSION_SEED = 42;
 export const CREW_REPORT_MINUTES = 60;
 export const CREW_RELEASE_MINUTES = 30;
 export const LOAD_FACTOR_RANGE = [0.65, 0.95];
@@ -113,7 +122,7 @@ export function swapCompatibility(currentType, candidateType) {
     return { compatible: false, reason: `${currentType} and ${candidateType} differ and at least one type is not in the compatibility table.` };
   }
   if (current.family === candidate.family) {
-    return { compatible: true, reason: `${currentType} and ${candidateType} are both ${current.family} family. Seat capacity is not modeled; dispatch must confirm.` };
+    return { compatible: true, reason: `${currentType} and ${candidateType} are both ${current.family} family. Seat capacity is checked separately by the swap search.` };
   }
   return { compatible: false, reason: `${currentType} (${current.family} family) and ${candidateType} (${candidate.family} family) are not interchangeable.` };
 }

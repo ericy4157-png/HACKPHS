@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import type { Flight } from "../types";
+import { ACTION_LABEL } from "../flightLabels";
 
 export type ListFilter = "needs_decision" | "decided" | "all";
 
@@ -13,9 +14,9 @@ type Props = {
 };
 
 const FILTERS: { value: ListFilter; label: string }[] = [
+  { value: "all", label: "All" },
   { value: "needs_decision", label: "To decide" },
   { value: "decided", label: "Decided" },
-  { value: "all", label: "All" },
 ];
 
 function needsDecision(flight: Flight): boolean {
@@ -37,17 +38,25 @@ function matchesQuery(flight: Flight, query: string): boolean {
 function rowStatusLabel(flight: Flight): string {
   if (flight.approvalStatus === "approved") return "accepted";
   if (flight.approvalStatus === "rejected") return "rejected";
-  return flight.status;
+  if (flight.status !== "ok" && flight.action) return ACTION_LABEL[flight.action];
+  return flight.status === "ok" ? "on schedule" : flight.status;
 }
 
 /** Selection rail shown when no flight is selected: a searchable, filterable list of flights. */
 export function FlightListRail({ flights, query, filter, onQueryChange, onFilterChange, onSelect }: Props) {
-  // Flights that still need a decision come first, then the longest delays.
+  // Undecided plans first, then decided plans, then on-schedule flights; within each, most passengers first.
   const visible = useMemo(
     () =>
       flights
         .filter((f) => matchesFilter(f, filter) && matchesQuery(f, query))
-        .sort((a, b) => Number(needsDecision(b)) - Number(needsDecision(a)) || b.delayMinutes - a.delayMinutes),
+        .sort(
+          (a, b) =>
+            Number(needsDecision(b)) - Number(needsDecision(a)) ||
+            Number(b.status !== "ok") - Number(a.status !== "ok") ||
+            b.passengers - a.passengers ||
+            Date.parse(a.schedule?.before.departureAt ?? "") - Date.parse(b.schedule?.before.departureAt ?? "") ||
+            (b.delayMinutes ?? 0) - (a.delayMinutes ?? 0),
+        ),
     [flights, filter, query],
   );
 
@@ -99,7 +108,7 @@ export function FlightListRail({ flights, query, filter, onQueryChange, onFilter
                   <span className="status-chip" data-status={flight.status}>
                     {rowStatusLabel(flight)}
                   </span>
-                  {flight.delayMinutes > 0 && <span className="flight-row-delay">+{flight.delayMinutes}m</span>}
+                  {(flight.delayMinutes ?? 0) > 0 && <span className="flight-row-delay">+{flight.delayMinutes}m</span>}
                 </span>
               </button>
             </li>

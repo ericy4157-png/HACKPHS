@@ -7,5 +7,6 @@ test("a diversion balances safety with proximity to the passenger's intended des
   const result = simulateDisaster({ airport: "RJTT", radiusNm: 5, severity: "severe" });
   const plan = result.plans.find((item) => item.flightId === "SKY821");
   assert.equal(plan.action, "reroute");
-  assert.equal(plan.plan.diversionAirport, "RKSI");
+  // Closest compliant alternate in the mid-size network (Narita is nearer the track than Incheon).
+  assert.equal(plan.plan.diversionAirport, "RJAA");
 });

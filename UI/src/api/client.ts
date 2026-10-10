@@ -1,5 +1,5 @@
-import type { DecisionResult, Flight, Incident, ScenarioSnapshot } from "../types";
-import { DEMO_SCENARIOS } from "../data/demoData";
+import type { DecisionResult, Flight, Incident, ScenarioSnapshot, TickSnapshot } from "../types";
+import { loadDemoScenarios } from "../data/demoData";
 
 /**
  * API client for Skyward.
@@ -9,12 +9,16 @@ import { DEMO_SCENARIOS } from "../data/demoData";
  * or VITE_USE_MOCK=true to run the UI on local mock data. If the backend cannot be
  * reached, the app can switch to mock data at runtime via `enableMockMode()`.
  *
+ * List endpoints request `?scope=active` so unaffected multi-day legs arrive as compact
+ * markers. Full detail is fetched with GET /api/flights/:id when a flight is selected.
+ *
  *   GET  {base}/api/incident             → Incident
- *   GET  {base}/api/flights              → Flight[]
+ *   GET  {base}/api/flights?scope=active → Flight[]
  *   GET  {base}/api/flights/:id          → Flight
  *   POST {base}/api/flights/:id/accept   → DecisionResult
  *   POST {base}/api/flights/:id/reject   → DecisionResult
- *   POST {base}/api/scenario/next        → ScenarioSnapshot
+ *   POST {base}/api/scenario/next?scope=active → ScenarioSnapshot
+ *   POST {base}/api/tick?scope=active    → TickSnapshot
  */
 
 let mockMode = import.meta.env.VITE_USE_MOCK === "true";
@@ -51,17 +55,43 @@ function delay<T>(value: T, ms = 280): Promise<T> {
  * "Next scenario". Copies are handed out so React state never shares references with the store.
  */
 let mockScenarioIndex = 0;
-const freshDemoFlights = (): Flight[] => DEMO_SCENARIOS[mockScenarioIndex].flights.map((f) => ({ ...f }));
-let mockFlights: Flight[] = freshDemoFlights();
+let demoReady: Promise<void> | null = null;
+let mockFlights: Flight[] = [];
+let demoIncidents: Incident[] = [];
+let demoFlightSets: Flight[][] = [];
+let mockSimMinutes = 0;
+let mockPlanRevision = 0;
+let mockLastOpsNote: string | null = null;
+
+async function ensureDemo(): Promise<void> {
+  if (demoFlightSets.length) return;
+  if (!demoReady) {
+    demoReady = loadDemoScenarios().then((scenarios) => {
+      demoIncidents = scenarios.map((s) => s.incident);
+      demoFlightSets = scenarios.map((s) => s.flights.map((f) => ({ ...f })));
+      mockFlights = demoFlightSets[mockScenarioIndex].map((f) => ({ ...f }));
+      mockSimMinutes = 0;
+      mockPlanRevision = 0;
+      mockLastOpsNote = null;
+    });
+  }
+  await demoReady;
+}
 
 function mockIncident(): Incident {
   const needsPlan = mockFlights.filter((f) => f.planId !== undefined);
   const decided = needsPlan.filter((f) => f.approvalStatus !== "pending").length;
   const approved = needsPlan.filter((f) => f.approvalStatus === "approved").length;
+  const tickSeconds = demoIncidents[mockScenarioIndex]?.tickSeconds ?? 12;
   return {
-    ...DEMO_SCENARIOS[mockScenarioIndex].incident,
+    ...demoIncidents[mockScenarioIndex],
     recoveryProgress: needsPlan.length ? decided / needsPlan.length : 1,
     statusLine: `${approved} of ${needsPlan.length} recovery plans approved · demo data`,
+    simMinutes: mockSimMinutes,
+    simClockIso: new Date(Date.now() + mockSimMinutes * 60_000).toISOString(),
+    tickSeconds,
+    lastOpsNote: mockLastOpsNote,
+    planRevision: mockPlanRevision,
   };
 }
 
@@ -73,29 +103,89 @@ function mockDecide(flightId: string, decision: "accept" | "reject"): DecisionRe
   const updated: Flight =
     decision === "accept"
       ? { ...existing, approvalStatus: "approved", status: "rerouted" }
-      : { ...existing, approvalStatus: "rejected", status: "disrupted" };
-  mockFlights = mockFlights.map((f) => (f.id === flightId ? updated : f));
-  return { ok: true, flightId, flight: { ...updated }, incident: mockIncident() };
+      : {
+          ...existing,
+          approvalStatus: "pending",
+          status: "disrupted",
+          action: "hold_for_human_review",
+          supersededReason: `decision rejected on ${flightId}`,
+        };
+  mockPlanRevision += 1;
+  mockFlights = mockFlights.map((f) => {
+    if (f.id === flightId) return updated;
+    // Demo butterfly: mark other pending plans as refreshed after a decision.
+    if (f.planId && f.approvalStatus === "pending" && decision === "accept") {
+      return { ...f, planRevision: mockPlanRevision, supersededReason: `decision accepted on ${flightId}` };
+    }
+    return f;
+  });
+  const flight = mockFlights.find((f) => f.id === flightId)!;
+  return {
+    ok: true,
+    flightId,
+    flight: { ...flight },
+    flights: mockFlights.map((f) => ({ ...f })),
+    incident: mockIncident(),
+  };
+}
+
+function mockTick(): TickSnapshot {
+  mockSimMinutes += 5;
+  mockPlanRevision += 1;
+  const pendingOps = mockFlights.filter((f) => f.approvalStatus === "pending" && f.status !== "ok");
+  if (pendingOps.length < 2) {
+    const candidate = mockFlights.find((f) => f.status === "ok" && !f.compact);
+    if (candidate) {
+      mockLastOpsNote = `Gate hold — inbound late to the gate on ${candidate.callsign} (+45m)`;
+      mockFlights = mockFlights.map((f) =>
+        f.id === candidate.id
+          ? {
+              ...f,
+              status: "rerouting",
+              action: "delay",
+              delayMinutes: 45,
+              approvalStatus: "pending",
+              planId: `DEMO-OPS-${candidate.id}`,
+              planRevision: mockPlanRevision,
+              supersededReason: "ops noise (demo)",
+            }
+          : f,
+      );
+    }
+  }
+  return { incident: mockIncident(), flights: mockFlights.map((f) => ({ ...f })) };
 }
 
 export async function getIncident(): Promise<Incident> {
-  if (mockMode) return delay(mockIncident());
+  if (mockMode) {
+    await ensureDemo();
+    return delay(mockIncident());
+  }
   return requestJson<Incident>("/api/incident");
 }
 
 export async function getFlights(): Promise<Flight[]> {
-  if (mockMode) return delay(mockFlights.map((f) => ({ ...f })));
-  return requestJson<Flight[]>("/api/flights");
+  if (mockMode) {
+    await ensureDemo();
+    return delay(mockFlights.map((f) => ({ ...f })));
+  }
+  return requestJson<Flight[]>("/api/flights?scope=active");
 }
 
 export async function getFlight(id: string): Promise<Flight | undefined> {
-  if (mockMode) return delay(mockFlights.find((f) => f.id === id));
+  if (mockMode) {
+    await ensureDemo();
+    return delay(mockFlights.find((f) => f.id === id));
+  }
   return requestJson<Flight>(`/api/flights/${encodeURIComponent(id)}`);
 }
 
 async function decide(flightId: string, decision: "accept" | "reject"): Promise<DecisionResult> {
-  if (mockMode) return delay(mockDecide(flightId, decision));
-  return requestJson<DecisionResult>(`/api/flights/${encodeURIComponent(flightId)}/${decision}`, {
+  if (mockMode) {
+    await ensureDemo();
+    return delay(mockDecide(flightId, decision));
+  }
+  return requestJson<DecisionResult>(`/api/flights/${encodeURIComponent(flightId)}/${decision}?scope=active`, {
     method: "POST",
     body: JSON.stringify({ decidedBy: "skyward-ui-operator" }),
   });
@@ -110,9 +200,22 @@ export const rejectReroute = (flightId: string) => decide(flightId, "reject");
  */
 export async function nextScenario(): Promise<ScenarioSnapshot> {
   if (mockMode) {
-    mockScenarioIndex = (mockScenarioIndex + 1) % DEMO_SCENARIOS.length;
-    mockFlights = freshDemoFlights();
+    await ensureDemo();
+    mockScenarioIndex = (mockScenarioIndex + 1) % demoFlightSets.length;
+    mockFlights = demoFlightSets[mockScenarioIndex].map((f) => ({ ...f }));
+    mockSimMinutes = 0;
+    mockPlanRevision = 0;
+    mockLastOpsNote = null;
     return delay({ incident: mockIncident(), flights: mockFlights.map((f) => ({ ...f })) });
   }
-  return requestJson<ScenarioSnapshot>("/api/scenario/next", { method: "POST" });
+  return requestJson<ScenarioSnapshot>("/api/scenario/next?scope=active", { method: "POST" });
+}
+
+/** Advance the live ops clock one tick and return the refreshed snapshot. */
+export async function tickNetwork(): Promise<TickSnapshot> {
+  if (mockMode) {
+    await ensureDemo();
+    return delay(mockTick(), 120);
+  }
+  return requestJson<TickSnapshot>("/api/tick?scope=active", { method: "POST" });
 }

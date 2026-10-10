@@ -13,9 +13,25 @@ import {
   blockMinutesFor, categoryOf, maxRangeNm, sectorFuel
 } from "./aircraftPerformance.js";
 import {
-  ANCHOR_FLIGHTS, ANCHOR_LATEST_DEPARTURE_MINUTES, CONNECTING_GROUP_SIZE, CONNECTING_PASSENGER_SHARE, CONNECTING_SHARE_PER_LEG, FILLER_DISTANCE_BAND_NM, FLEET_PLAN,
-  LEGS_PER_TAIL, LOCAL_GROUP_SIZE, MAINTENANCE_THRESHOLD_CYCLES, MAINTENANCE_THRESHOLD_HOURS, MAX_CONNECTION_MINUTES, NETWORK_SEED, REGION_AIRPORTS
+  ANCHOR_FLIGHTS, ANCHOR_LATEST_DEPARTURE_MINUTES, CONNECTING_GROUP_SIZE, CONNECTING_PASSENGER_SHARE, CONNECTING_SHARE_PER_LEG,
+  EXTRA_FLEET_PLAN, EXTRA_LEGS_PER_TAIL, FILLER_DISTANCE_BAND_NM, FLEET_PLAN, HUBS,
+  LEGS_PER_TAIL, LOCAL_GROUP_SIZE, MAINTENANCE_THRESHOLD_CYCLES, MAINTENANCE_THRESHOLD_HOURS, MAX_CONNECTION_MINUTES,
+  NETWORK_SEED, REGION_AIRPORTS, RESERVE_FLEET
 } from "./networkPlan.js";
+
+const HUB_BY_ICAO = new Map(HUBS.map((hub) => [hub.icao, hub]));
+const ORIGINAL_TAIL_IDS = new Set(FLEET_PLAN.map((tail) => tail.id));
+
+/** Next hub-bank slot at or after `offset` when the airport is a configured hub. */
+function snapToHubWave(offset, airportIcao) {
+  const hub = HUB_BY_ICAO.get(airportIcao);
+  if (!hub) return offset;
+  const { periodMinutes, phaseMinutes } = hub;
+  const shifted = offset - phaseMinutes;
+  if (shifted <= 0) return phaseMinutes <= offset ? offset : phaseMinutes;
+  const slots = Math.ceil(shifted / periodMinutes);
+  return phaseMinutes + slots * periodMinutes;
+}
 
 const MINUTES_PER_DAY = 24 * 60;
 // Range is used up to this fraction so no generated sector sits exactly on the fuel limit.
@@ -119,12 +135,20 @@ function appendLeg(tail, state, destination, anchor, ctx) {
   const previous = state.legs.at(-1);
   let departure, turnBeforeMinutes = null, refuelMinutes = 0;
   if (!previous) {
-    departure = anchor.scheduledOffsetMinutes;
+    if (anchor) {
+      departure = anchor.scheduledOffsetMinutes;
+    } else {
+      // Extra tails without anchors start on a hub wave shortly after "now".
+      departure = snapToHubWave(30 + Math.floor(ctx.random() * 180), origin);
+    }
   } else {
     refuelMinutes = Math.ceil(Math.max(0, fuel.departureKg - previous.fuel.arrivalKg) / tail.refuelKgPerMinute);
     const minimumGround = tail.minimumTurnMinutes + refuelMinutes + (state.checkBeforeNextLeg ? MAINTENANCE_CHECK_MINUTES : 0);
     const ready = previous.arrivalOffsetMinutes + minimumGround;
-    departure = anchor && anchor.status !== "airborne" ? Math.max(anchor.scheduledOffsetMinutes, ready) : ready;
+    let planned = anchor && anchor.status !== "airborne" ? Math.max(anchor.scheduledOffsetMinutes, ready) : ready;
+    // Prefer hub banks for filler legs on expanded tails only (keeps the original 15-tail seed stable).
+    if (!anchor && !ORIGINAL_TAIL_IDS.has(tail.id)) planned = snapToHubWave(planned, origin);
+    departure = planned;
     turnBeforeMinutes = departure - previous.arrivalOffsetMinutes;
   }
   const arrival = departure + blockMinutes;
@@ -148,11 +172,14 @@ function appendLeg(tail, state, destination, anchor, ctx) {
 
 /** One continuous rotation: anchors in their planned order, positioning legs between them, then generated legs. */
 function buildRotation(tail, ctx) {
-  const anchors = tail.anchors.map((id) => ctx.anchorsById.get(id));
-  const [minLegs, maxLegs] = LEGS_PER_TAIL[tail.category];
+  const anchors = (tail.anchors || []).map((id) => ctx.anchorsById.get(id)).filter(Boolean);
+  const band = ORIGINAL_TAIL_IDS.has(tail.id) ? LEGS_PER_TAIL : EXTRA_LEGS_PER_TAIL;
+  const [minLegs, maxLegs] = band[tail.category];
   const targetLegs = randomInt(ctx.random, minLegs, maxLegs);
+  const startLocation = anchors[0]?.origin || tail.home;
+  if (!startLocation) throw new Error(`${tail.id}: needs anchors or a home airport`);
   const state = {
-    legs: [], maintenanceVisits: [], location: anchors[0].origin, previousOrigin: null,
+    legs: [], maintenanceVisits: [], location: startLocation, previousOrigin: null,
     hoursRemaining: tail.hoursRemaining, cyclesRemaining: tail.cyclesRemaining, checkBeforeNextLeg: false
   };
   let anchorIndex = 0;
@@ -182,18 +209,53 @@ function buildRotation(tail, ctx) {
   return state;
 }
 
-/** Lowest unused SKY number from 100 upwards, in fleet then rotation order, so IDs are stable for a seed. */
+/**
+ * Assign flight IDs. Original tails keep 3-digit SKY### (100-999) for seed stability.
+ * Extra operating tails use SKY1000+.
+ */
 function assignLegIds(rotations) {
-  const used = new Set(ANCHOR_FLIGHTS.map((flight) => Number(flight.id.slice(3))));
-  let next = 100;
+  const used = new Set();
   for (const { legs } of rotations) {
     for (const leg of legs) {
-      if (leg.anchorId) { leg.id = leg.anchorId; continue; }
-      while (used.has(next)) next += 1;
-      if (next > 999) throw new Error("Ran out of SKY flight numbers (100-999)");
-      leg.id = `SKY${next}`;
-      used.add(next);
+      if (leg.id) used.add(Number(String(leg.id).replace(/^SKY/, "")));
+      else if (leg.anchorId) used.add(Number(leg.anchorId.slice(3)));
     }
+  }
+  for (const flight of ANCHOR_FLIGHTS) used.add(Number(flight.id.slice(3)));
+  let nextOriginal = 100;
+  let nextExpanded = 1000;
+  for (const { tail, legs } of rotations) {
+    const expanded = !ORIGINAL_TAIL_IDS.has(tail.id);
+    for (const leg of legs) {
+      if (leg.id) continue;
+      if (leg.anchorId) { leg.id = leg.anchorId; continue; }
+      if (expanded) {
+        while (used.has(nextExpanded)) nextExpanded += 1;
+        leg.id = `SKY${nextExpanded}`;
+        used.add(nextExpanded);
+        nextExpanded += 1;
+      } else {
+        while (used.has(nextOriginal)) nextOriginal += 1;
+        if (nextOriginal > 999) throw new Error("Ran out of SKY flight numbers (100-999) for original tails");
+        leg.id = `SKY${nextOriginal}`;
+        used.add(nextOriginal);
+        nextOriginal += 1;
+      }
+    }
+  }
+}
+
+function assignPassengers(rotations, ctx) {
+  for (const { tail, legs } of rotations) {
+    legs.forEach((leg, index) => {
+      if (leg.passengers != null && leg.passengerGroupIds) return;
+      const anchor = ctx.anchorsById.get(leg.anchorId);
+      const loadFactor = LOAD_FACTOR_RANGE[0] + ctx.random() * (LOAD_FACTOR_RANGE[1] - LOAD_FACTOR_RANGE[0]);
+      Object.assign(leg, {
+        legNumber: index + 1, tailId: tail.id, category: tail.category, passengerGroupIds: [],
+        passengers: anchor ? Math.min(anchor.passengers, tail.seats) : Math.round(tail.seats * loadFactor)
+      });
+    });
   }
 }
 
@@ -343,6 +405,22 @@ function toFlight(leg, tail, anchor, ctx) {
  * Generate the full network for a seed. `airports` is the list from src/referenceData.js
  * ({ icao, lat, lon, runwayFt }). Throws if any invariant in validateNetwork fails.
  */
+function fleetEntry(tail, legs, { reserve = false, parkedAt = null } = {}) {
+  return {
+    id: tail.id, type: tail.type,
+    location: reserve ? parkedAt : locationAtNow(legs),
+    parkedAt: reserve ? parkedAt : null,
+    reserve,
+    maintenanceDueInHours: tail.hoursRemaining,
+    minimumTurnMinutes: tail.minimumTurnMinutes, seats: tail.seats, fuelCapacityKg: tail.fuelCapacityKg, burnKgPerNm: tail.burnKgPerNm,
+    maintenance: {
+      flightHoursRemaining: tail.hoursRemaining, cyclesRemaining: tail.cyclesRemaining,
+      intervalHours: tail.intervalHours, intervalCycles: tail.intervalCycles, checkStations: [...MAINTENANCE_CHECK_STATIONS]
+    },
+    rotationId: `ROT-${tail.id}`
+  };
+}
+
 export function generateNetwork({ airports, seed = NETWORK_SEED }) {
   const airportsByIcao = new Map(airports.map((airport) => [airport.icao, airport]));
   const distanceCache = new Map();
@@ -357,46 +435,48 @@ export function generateNetwork({ airports, seed = NETWORK_SEED }) {
     }
   };
 
-  const tails = FLEET_PLAN.map(tailProfile);
-  const rotations = tails.map((tail) => ({ tail, ...buildRotation(tail, ctx) }));
-  assignLegIds(rotations);
+  // Original tails first so their RNG draws (IDs, load factors) match the pre-expansion network.
+  const originalTails = FLEET_PLAN.map(tailProfile);
+  const originalRotations = originalTails.map((tail) => ({ tail, ...buildRotation(tail, ctx) }));
+  assignLegIds(originalRotations);
+  assignPassengers(originalRotations, ctx);
 
-  const allLegs = [];
+  const extraTails = EXTRA_FLEET_PLAN.map(tailProfile);
+  const extraRotations = extraTails.map((tail) => ({ tail, ...buildRotation(tail, ctx) }));
+  assignLegIds(extraRotations);
+  assignPassengers(extraRotations, ctx);
+
+  const rotations = [...originalRotations, ...extraRotations];
+  const allLegs = rotations.flatMap(({ legs }) => legs);
   const crewAssignments = [];
   for (const { tail, legs } of rotations) {
-    legs.forEach((leg, index) => {
-      const anchor = ctx.anchorsById.get(leg.anchorId);
-      const loadFactor = LOAD_FACTOR_RANGE[0] + ctx.random() * (LOAD_FACTOR_RANGE[1] - LOAD_FACTOR_RANGE[0]);
-      Object.assign(leg, {
-        legNumber: index + 1, tailId: tail.id, category: tail.category, passengerGroupIds: [],
-        passengers: anchor ? Math.min(anchor.passengers, tail.seats) : Math.round(tail.seats * loadFactor)
-      });
-      allLegs.push(leg);
-    });
     crewAssignments.push(...buildCrewAssignments(tail, legs));
   }
   const passengerGroups = buildPassengerGroups(allLegs, ctx.random);
 
   const anchorOrder = new Map(ANCHOR_FLIGHTS.map((anchor, index) => [anchor.id, index]));
   const flights = rotations.flatMap(({ tail, legs }) => legs.map((leg) => toFlight(leg, tail, ctx.anchorsById.get(leg.anchorId), ctx)))
-    .sort((a, b) => (anchorOrder.get(a.id) ?? Infinity) - (anchorOrder.get(b.id) ?? Infinity));
+    .sort((a, b) => (anchorOrder.get(a.id) ?? Infinity) - (anchorOrder.get(b.id) ?? Infinity) || a.id.localeCompare(b.id));
 
-  const fleet = rotations.map(({ tail, legs }) => ({
-    id: tail.id, type: tail.type, location: locationAtNow(legs), maintenanceDueInHours: tail.hoursRemaining,
-    minimumTurnMinutes: tail.minimumTurnMinutes, seats: tail.seats, fuelCapacityKg: tail.fuelCapacityKg, burnKgPerNm: tail.burnKgPerNm,
-    maintenance: {
-      flightHoursRemaining: tail.hoursRemaining, cyclesRemaining: tail.cyclesRemaining,
-      intervalHours: tail.intervalHours, intervalCycles: tail.intervalCycles, checkStations: [...MAINTENANCE_CHECK_STATIONS]
-    },
-    rotationId: `ROT-${tail.id}`
-  }));
+  const operatingFleet = rotations.map(({ tail, legs }) => fleetEntry(tail, legs));
+  const reserveFleet = RESERVE_FLEET.map((plan) => {
+    const tail = tailProfile({ ...plan, anchors: [] });
+    return fleetEntry(tail, [], { reserve: true, parkedAt: plan.parkedAt });
+  });
+  const fleet = [...operatingFleet, ...reserveFleet];
 
-  const rotationList = rotations.map(({ tail, legs, maintenanceVisits }) => ({
-    id: `ROT-${tail.id}`, tailId: tail.id, flightIds: legs.map((leg) => leg.id),
-    maintenanceVisits: maintenanceVisits.map(({ afterLegIndex, ...visit }) => ({ ...visit, afterFlightId: legs[afterLegIndex].id })),
-    crewAssignmentIds: crewAssignments.filter((assignment) => assignment.tailId === tail.id).map((assignment) => assignment.id),
-    startOffsetMinutes: legs[0].scheduledOffsetMinutes, endOffsetMinutes: legs.at(-1).arrivalOffsetMinutes
-  }));
+  const rotationList = [
+    ...rotations.map(({ tail, legs, maintenanceVisits }) => ({
+      id: `ROT-${tail.id}`, tailId: tail.id, flightIds: legs.map((leg) => leg.id),
+      maintenanceVisits: maintenanceVisits.map(({ afterLegIndex, ...visit }) => ({ ...visit, afterFlightId: legs[afterLegIndex].id })),
+      crewAssignmentIds: crewAssignments.filter((assignment) => assignment.tailId === tail.id).map((assignment) => assignment.id),
+      startOffsetMinutes: legs[0].scheduledOffsetMinutes, endOffsetMinutes: legs.at(-1).arrivalOffsetMinutes
+    })),
+    ...reserveFleet.map((tail) => ({
+      id: `ROT-${tail.id}`, tailId: tail.id, flightIds: [], maintenanceVisits: [], crewAssignmentIds: [],
+      startOffsetMinutes: 0, endOffsetMinutes: 0, reserve: true
+    }))
+  ];
 
   const network = { seed, flights, fleet, rotations: rotationList, passengerGroups, crewAssignments };
   const problems = validateNetwork(network, airports);
@@ -420,6 +500,11 @@ export function validateNetwork({ flights, fleet, rotations, passengerGroups, cr
     const tail = tailsById.get(rotation.tailId);
     const rules = CATEGORY_RULES[AIRCRAFT_TYPES[tail.type].category];
     const legs = rotation.flightIds.map((id) => flightsById.get(id));
+    if (!legs.length) {
+      if (!tail.reserve) problems.push(`${tail.id} has no legs and is not marked reserve`);
+      else if (!tail.parkedAt && !tail.location) problems.push(`${tail.id} reserve has no parked airport`);
+      continue;
+    }
     const visitsAfter = new Map(rotation.maintenanceVisits.map((visit) => [visit.afterFlightId, visit]));
     let hoursLeft = tail.maintenance.flightHoursRemaining;
     let cyclesLeft = tail.maintenance.cyclesRemaining;
@@ -445,7 +530,8 @@ export function validateNetwork({ flights, fleet, rotations, passengerGroups, cr
       if (hoursLeft < 0 || cyclesLeft < 0) problems.push(`${tail.id} passes its maintenance limit on ${leg.id}`);
       if (leg.passengers > tail.seats) problems.push(`${leg.id} has ${leg.passengers} passengers for ${tail.seats} seats`);
     });
-    if (rules.maxDutyMinutes < Math.max(...crewAssignments.filter((crew) => crew.tailId === tail.id).map((crew) => crew.dutyMinutes))) {
+    const duties = crewAssignments.filter((crew) => crew.tailId === tail.id).map((crew) => crew.dutyMinutes);
+    if (duties.length && rules.maxDutyMinutes < Math.max(...duties)) {
       problems.push(`${tail.id} has a crew assignment past ${rules.maxDutyMinutes} min duty`);
     }
   }

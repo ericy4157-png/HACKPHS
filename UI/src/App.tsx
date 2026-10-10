@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { enableMockMode, getFlights, getIncident, isMockMode, nextScenario } from "./api/client";
+import { enableMockMode, getFlight, getFlights, getIncident, isMockMode, nextScenario, tickNetwork } from "./api/client";
 import { FlightDetailRail } from "./components/FlightDetailRail";
 import { FlightListRail, type ListFilter } from "./components/FlightListRail";
 import { GlobeView } from "./components/GlobeView";
@@ -18,7 +18,7 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [demoNotice, setDemoNotice] = useState<string | null>(null);
   const [listQuery, setListQuery] = useState("");
-  const [listFilter, setListFilter] = useState<ListFilter>("needs_decision");
+  const [listFilter, setListFilter] = useState<ListFilter>("all");
 
   useEffect(() => {
     let cancelled = false;
@@ -54,14 +54,67 @@ export default function App() {
     };
   }, []);
 
+  // Live ops clock: while the tab is visible, refresh (and advance the clock in mock mode).
+  useEffect(() => {
+    if (loading || error) return;
+    let cancelled = false;
+    const tickMs = 12_000;
+
+    const run = async () => {
+      if (document.visibilityState === "hidden") return;
+      try {
+        if (isMockMode()) {
+          const snapshot = await tickNetwork();
+          if (cancelled) return;
+          setIncident(snapshot.incident);
+          setFlights(snapshot.flights);
+          return;
+        }
+        const [inc, fl] = await Promise.all([getIncident(), getFlights()]);
+        if (cancelled) return;
+        setIncident(inc);
+        setFlights(fl);
+      } catch {
+        /* keep last good snapshot; next interval retries */
+      }
+    };
+
+    const id = window.setInterval(run, tickMs);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [loading, error]);
+
   const selected = useMemo(
     () => flights.find((f) => f.id === selectedId) ?? null,
     [flights, selectedId],
   );
 
+  // Compact markers from scope=active lack route detail; hydrate from GET /api/flights/:id.
+  useEffect(() => {
+    if (!selectedId) return;
+    const current = flights.find((f) => f.id === selectedId);
+    if (!current?.compact) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const full = await getFlight(selectedId);
+        if (cancelled || !full) return;
+        setFlights((list) => list.map((f) => (f.id === selectedId ? full : f)));
+      } catch {
+        /* keep the compact row; detail rail shows what it can */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedId, flights]);
+
   const onDecision = (result: DecisionResult) => {
-    const { flight, incident: nextIncident } = result;
-    if (flight) setFlights((current) => current.map((f) => (f.id === flight.id ? flight : f)));
+    const { flight, flights: nextFlights, incident: nextIncident } = result;
+    if (nextFlights) setFlights(nextFlights);
+    else if (flight) setFlights((current) => current.map((f) => (f.id === flight.id ? flight : f)));
     if (nextIncident) setIncident(nextIncident);
   };
 

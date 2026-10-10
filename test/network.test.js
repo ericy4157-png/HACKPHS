@@ -37,7 +37,11 @@ test("every rotation is continuous: each leg departs where the previous one land
       assert.ok(legs[index].scheduledOffsetMinutes > legs[index - 1].arrivalOffsetMinutes, `${legs[index].id} departs after the previous arrival`);
     }
   }
-  assert.equal(rotations.reduce((sum, rotation) => sum + rotation.flightIds.length, 0), flights.length, "every leg is in exactly one rotation");
+  assert.equal(
+    rotations.filter((rotation) => !rotation.reserve).reduce((sum, rotation) => sum + rotation.flightIds.length, 0),
+    flights.length,
+    "every leg is in exactly one operating rotation"
+  );
 });
 
 test("every flight declares the type of the tail that flies it", () => {
@@ -119,9 +123,11 @@ test("fuel never exceeds capacity or lands below reserve, and crews stay inside 
   for (const crew of crewAssignments) assert.ok(crew.dutyMinutes <= crew.maxDutyMinutes, `${crew.id} duty ${crew.dutyMinutes} min`);
 });
 
-test("every one of the 32 airports has at least one flight", () => {
+test("every network airport has at least one flight", () => {
   const served = new Set(flights.flatMap((flight) => [flight.origin, flight.destination]));
-  assert.equal(airports.length, 32);
+  assert.ok(airports.length >= 60, "mid-size network has at least 60 airports");
+  assert.ok(fleet.filter((tail) => tail.reserve).length >= 5, "reserve tails are present");
+  assert.ok(flights.length >= 1000 && flights.length <= 1500, `${flights.length} legs in mid-size band`);
   for (const airport of airports) assert.ok(served.has(airport.icao), `${airport.icao} has a flight`);
 });
 
@@ -197,7 +203,7 @@ test("every proposed replacement tail is on the ground at the swap airport, read
     const tail = tailById.get(toAircraft.id);
     const legs = legsOf(rotations.find((rotation) => rotation.tailId === tail.id));
     const landed = legs.filter((leg) => leg.arrivalOffsetMinutes <= neededAt).at(-1);
-    const airport = landed ? landed.destination : legs[0].origin;
+    const airport = landed ? landed.destination : (legs[0]?.origin ?? tail.parkedAt ?? tail.location);
     assert.equal(airport, swapAt, `${plan.flightId}: ${tail.id} is at ${airport}`);
     if (landed) assert.ok(landed.arrivalOffsetMinutes + tail.minimumTurnMinutes <= neededAt + 1, `${plan.flightId}: ${tail.id} turned in time`);
   }

@@ -11,9 +11,10 @@ type Props = {
   focus: { lat: number; lng: number } | null;
 };
 
-const EARTH_DAY = "//cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg";
-const EARTH_NIGHT = "//cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg";
-const BUMP = "//cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png";
+// Served from UI/public: three-globe keeps the whole scene hidden until the globe texture loads.
+const EARTH_DAY = "/textures/earth-blue-marble.jpg";
+const EARTH_NIGHT = "/textures/earth-night.jpg";
+const BUMP = "/textures/earth-topology.png";
 
 function statusColor(status: Flight["status"], selected: boolean): string {
   if (selected) return "#ffe08a";
@@ -29,15 +30,17 @@ function statusColor(status: Flight["status"], selected: boolean): string {
   }
 }
 
+/** Arcs only for flights with a plan or the selected flight; compact markers stay points-only. */
 function buildArcs(flights: Flight[], selectedId: string | null): ArcDatum[] {
   const arcs: ArcDatum[] = [];
   for (const f of flights) {
     const selected = f.id === selectedId;
-    const showAll = !selectedId || selected;
-    if (!showAll && f.status === "ok") continue;
+    if (!selected && f.status === "ok") continue;
+    const original = f.originalPath;
+    if (!original || original.length < 2) continue;
 
-    const o0 = f.originalPath[0];
-    const o1 = f.originalPath[f.originalPath.length - 1];
+    const o0 = original[0];
+    const o1 = original[original.length - 1];
     arcs.push({
       id: `${f.id}-orig`,
       flightId: f.id,
@@ -50,10 +53,11 @@ function buildArcs(flights: Flight[], selectedId: string | null): ArcDatum[] {
       dash: true,
     });
 
-    if (f.status !== "ok") {
-      for (let i = 0; i < f.proposedPath.length - 1; i++) {
-        const a = f.proposedPath[i];
-        const b = f.proposedPath[i + 1];
+    const proposed = f.proposedPath;
+    if (f.status !== "ok" && proposed) {
+      for (let i = 0; i < proposed.length - 1; i++) {
+        const a = proposed[i];
+        const b = proposed[i + 1];
         arcs.push({
           id: `${f.id}-prop-${i}`,
           flightId: f.id,
@@ -110,7 +114,7 @@ export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props)
     const ro = new ResizeObserver((entries) => {
       const cr = entries[0]?.contentRect;
       if (!cr) return;
-      setSize({ w: Math.max(320, cr.width), h: Math.max(320, cr.height) });
+      setSize({ w: Math.max(1, Math.floor(cr.width)), h: Math.max(1, Math.floor(cr.height)) });
     });
     ro.observe(el);
     return () => ro.disconnect();

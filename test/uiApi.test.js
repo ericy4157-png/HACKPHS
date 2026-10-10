@@ -18,9 +18,9 @@ test("every network flight is returned once, in IATA codes, with drawable paths"
 test("affected flights carry the before/after change story", () => {
   const reroute = toUiFlights(buildOperationalSnapshot(0)).find((flight) => flight.id === "SKY820");
   assert.equal(reroute.status, "rerouting");
-  assert.equal(reroute.proposedRoute, "DFW → ATL → MIA");
-  assert.equal(reroute.stops[0].code, "ATL");
-  assert.match(reroute.changes.layover, /ATL/);
+  assert.match(reroute.proposedRoute, /^DFW → [A-Z]{3} → MIA$/);
+  assert.match(reroute.stops[0].code, /^[A-Z]{3}$/);
+  assert.match(reroute.changes.layover, new RegExp(reroute.stops[0].code));
   assert.doesNotMatch(reroute.changes.timing, /KMIA/);
 });
 

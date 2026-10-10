@@ -1,4 +1,5 @@
-import { airports, flights } from "./data.js";
+import { airports, flights, networkIndex } from "./data.js";
+import { getReferenceAirport } from "./referenceData.js";
 import { DEFAULT_WINDOW_HOURS, flightsInWindow } from "./simulation.js";
 
 /**
@@ -6,12 +7,13 @@ import { DEFAULT_WINDOW_HOURS, flightsInWindow } from "./simulation.js";
  * The UI speaks IATA codes and [lat, lng] paths; the planning engine speaks ICAO and waypoint objects.
  */
 
-const ICAO_TO_IATA = {
-  KJFK: "JFK", KBOS: "BOS", KIAD: "IAD", KORD: "ORD", KDEN: "DEN", KLAX: "LAX", KSFO: "SFO", KSEA: "SEA",
-  EGLL: "LHR", LFPG: "CDG", EDDF: "FRA", LTFM: "IST", OMDB: "DXB", VABB: "BOM", WSSS: "SIN", RJTT: "HND",
-  KATL: "ATL", KDFW: "DFW", KMIA: "MIA", CYYZ: "YYZ", MMMX: "MEX", SBGR: "GRU", EHAM: "AMS", LEMD: "MAD",
-  LIRF: "FCO", FAOR: "JNB", HECA: "CAI", VIDP: "DEL", VTBS: "BKK", VHHH: "HKG", RKSI: "ICN", YSSY: "SYD"
-};
+/** ICAO → IATA from the reference snapshot (and a built-in fallback for network airports). */
+const ICAO_TO_IATA = Object.fromEntries(
+  airports.map((airport) => {
+    const iata = getReferenceAirport(airport.icao)?.iata;
+    return [airport.icao, iata || airport.icao];
+  })
+);
 const ICAO_PATTERN = new RegExp(`\\b(${Object.keys(ICAO_TO_IATA).join("|")})\\b`, "g");
 
 // When two disruption events touch the same flight, the most disruptive plan is the one shown.
@@ -20,7 +22,7 @@ const SEVERITY_SCORE = { severe: 0.9, moderate: 0.6, minor: 0.3 };
 
 const toIata = (icao) => ICAO_TO_IATA[icao] || icao;
 const withIata = (text) => (text || "").replace(ICAO_PATTERN, (code) => ICAO_TO_IATA[code]);
-const byIcao = (icao) => airports.find((item) => item.icao === icao);
+const byIcao = (icao) => networkIndex.airportByIcao.get(icao);
 const toPath = (waypoints) => waypoints.map((point) => [point.lat, point.lon]);
 
 function airportView(airport) {
@@ -78,7 +80,10 @@ function affectedFlight(flight, plan) {
     },
     requiredChecks: plan.requiredChecks,
     diversionRunway: diversionRunwayView(plan.plan.diversionRunwayCheck),
-    swapCheck: deltas.swapCheck
+    swapCheck: deltas.swapCheck,
+    layers: plan.layers,
+    planRevision: plan.planRevision,
+    supersededReason: plan.supersededReason || undefined
   };
 }
 
@@ -101,21 +106,53 @@ function unaffectedFlight(flight) {
   };
 }
 
+/** Compact marker for flights that do not need a recovery plan in the active window. */
+function compactFlight(flight, inWindow) {
+  const origin = byIcao(flight.origin);
+  const marker = flight.position || origin;
+  return {
+    id: flight.id,
+    callsign: flight.callsign,
+    origin: toIata(flight.origin),
+    destination: toIata(flight.destination),
+    status: "ok",
+    lat: marker.lat,
+    lng: marker.lon,
+    passengers: flight.passengers,
+    dayIndex: flight.dayIndex,
+    inWindow,
+    compact: true
+  };
+}
+
 /**
  * Every network flight in UI shape; flights outside the disruption are returned with status "ok".
  * `dayIndex` (0 = the next 24 hours) and `inWindow` (inside the longest active event window) let
  * the UI filter the multi-day network later.
+ *
+ * Optional `scope`:
+ * - undefined / "full" (default): every flight in full detail (unchanged contract)
+ * - "active": full detail for planned or in-window flights; compact markers for the rest
  */
-export function toUiFlights(snapshot) {
+export function toUiFlights(snapshot, { scope } = {}) {
   const plans = primaryPlans(snapshot);
   const eventWindows = snapshot.activeEvents.map((event) => event.windowHours ?? DEFAULT_WINDOW_HOURS);
   const windowHours = eventWindows.length ? Math.max(...eventWindows) : DEFAULT_WINDOW_HOURS;
   const inWindow = new Set(flightsInWindow(windowHours).map((flight) => flight.id));
-  return flights.map((flight) => ({
-    ...(plans.has(flight.id) ? affectedFlight(flight, plans.get(flight.id)) : unaffectedFlight(flight)),
-    dayIndex: flight.dayIndex,
-    inWindow: inWindow.has(flight.id)
-  }));
+  const activeOnly = scope === "active";
+  return flights.map((flight) => {
+    const windowed = inWindow.has(flight.id);
+    if (plans.has(flight.id)) {
+      return { ...affectedFlight(flight, plans.get(flight.id)), dayIndex: flight.dayIndex, inWindow: windowed };
+    }
+    if (activeOnly && !windowed) return compactFlight(flight, false);
+    return { ...unaffectedFlight(flight), dayIndex: flight.dayIndex, inWindow: windowed };
+  });
+}
+
+/** One flight in full UI detail, or null when the id is unknown. */
+export function toUiFlight(snapshot, flightId) {
+  return toUiFlights(snapshot).find((flight) => flight.id === flightId) ?? null;
 }
 
 /** The active scenario as the UI's single Incident. */
@@ -125,18 +162,31 @@ export function toUiIncident(snapshot) {
   const approved = plans.filter((plan) => plan.approvalStatus === "approved").length;
   const events = snapshot.activeEvents.map((event) => `${event.type} centered on ${toIata(event.airport)} (${event.radiusNm} NM, ${event.severity})`);
   const centerAirport = byIcao(snapshot.activeEvents[0]?.airport);
+  const baseline = Boolean(snapshot.baseline);
+  const pending = plans.filter((plan) => plan.approvalStatus === "pending").length;
   return {
     id: `SCN-${snapshot.refreshNumber + 1}`,
     name: snapshot.scenario,
-    region: [...new Set(snapshot.affectedAirports.map((airport) => airport.city))].join(" · ") || "No airports inside the disruption area",
+    region: baseline ? "Network-wide" : [...new Set(snapshot.affectedAirports.map((airport) => airport.city))].join(" · ") || "No airports inside the disruption area",
     severity: Math.max(0, ...snapshot.activeEvents.map((event) => SEVERITY_SCORE[event.severity] ?? 0.5)),
     startedAt: snapshot.refreshedAt,
-    summary: `${events.join("; ")}. ${plans.length} flight(s) need a recovery decision.`,
+    summary: events.length
+      ? `${events.join("; ")}. ${pending} flight(s) need a recovery decision.`
+      : pending
+        ? `${pending} flight(s) need a decision (maintenance or ordinary ops delays).`
+        : "No active disruptions.",
     recoveryProgress: plans.length ? decided / plans.length : 1,
     statusLine: `${approved} of ${plans.length} recovery plans approved · human review required`,
     center: centerAirport ? { lat: centerAirport.lat, lng: centerAirport.lon } : null,
     scenarioNumber: snapshot.refreshNumber + 1,
-    notice: snapshot.notice
+    baseline,
+    notice: snapshot.notice,
+    simMinutes: snapshot.simMinutes ?? 0,
+    simClockIso: snapshot.simClockIso,
+    tickSeconds: snapshot.tickSeconds,
+    lastTickAt: snapshot.lastTickAt,
+    lastOpsNote: snapshot.lastOpsNote,
+    planRevision: snapshot.planRevision
   };
 }
 

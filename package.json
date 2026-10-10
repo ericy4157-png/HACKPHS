@@ -7,7 +7,9 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "node --test",
-    "build:reference": "node scripts/build-reference.js"
+    "build:reference": "node scripts/build-reference.js",
+    "freeze:demo": "node scripts/freeze-demo.js",
+    "build:bts": "node scripts/build-bts.js"
   },
   "engines": { "node": ">=20" }
 }

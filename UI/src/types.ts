@@ -12,7 +12,16 @@ export type Incident = {
   /** Backend-only fields; absent in mock mode. */
   center?: { lat: number; lng: number } | null;
   scenarioNumber?: number;
+  /** True for normal operations (no active disaster). */
+  baseline?: boolean;
   notice?: string;
+  /** Live ops clock (additive). */
+  simMinutes?: number;
+  simClockIso?: string;
+  tickSeconds?: number;
+  lastTickAt?: string | null;
+  lastOpsNote?: string | null;
+  planRevision?: number;
 };
 
 export type Airport = {
@@ -31,13 +40,18 @@ export type Flight = {
   origin: string;
   destination: string;
   status: FlightStatus;
-  originalPath: LatLng[];
-  proposedPath: LatLng[];
-  delayMinutes: number;
+  /** Present on full detail; absent on compact markers from scope=active. */
+  originalPath?: LatLng[];
+  proposedPath?: LatLng[];
+  delayMinutes?: number;
   passengers: number;
   /** Midpoint position used for globe point marker */
   lat: number;
   lng: number;
+  /** True when the API returned a compact marker (no route detail). */
+  compact?: boolean;
+  dayIndex?: number;
+  inWindow?: boolean;
   /** Recovery detail from the backend; absent in mock mode. */
   planId?: string;
   action?: "reroute" | "delay" | "cancel" | "hold_for_human_review";
@@ -67,6 +81,29 @@ export type Flight = {
   diversionRunway?: DiversionRunway;
   /** Why the plan did or did not switch aircraft. */
   swapCheck?: SwapCheck;
+  /** Layered recovery consequences (additive; first slice is aircraft knock-on only). */
+  layers?: RecoveryLayer[];
+  planRevision?: number;
+  /** Why this pending plan was rebuilt after a tick or another decision. */
+  supersededReason?: string;
+};
+
+export type RecoveryLayer = {
+  index: number;
+  kind: "disrupted_leg" | "aircraft_knock_on" | "passenger_group";
+  flightId?: string;
+  groupId?: string;
+  size?: number;
+  action?: string;
+  aircraftId?: string;
+  delayMinutes?: number;
+  absorbed?: boolean;
+  summary: string;
+};
+
+export type TickSnapshot = {
+  incident: Incident;
+  flights: Flight[];
 };
 
 export type DiversionRunway = {
@@ -107,6 +144,8 @@ export type DecisionResult = {
   ok: true;
   flightId: string;
   flight?: Flight;
+  /** Full list after replan (butterfly updates). */
+  flights?: Flight[];
   incident?: Incident;
 };
 
