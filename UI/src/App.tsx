@@ -53,7 +53,15 @@ export default function App() {
     const onWheel = (event: WheelEvent) => {
       const target = event.target;
       if (!(target instanceof Element)) return;
-      if (target.closest(".rail-left") || target.closest(".sheet") || target.closest(".flight-sheet")) return;
+      if (
+        target.closest(".rail-left") ||
+        target.closest(".sheet") ||
+        target.closest(".flight-sheet") ||
+        target.closest(".dash-queue") ||
+        target.closest(".dash-inspect")
+      ) {
+        return;
+      }
       const max = scroller.scrollHeight - scroller.clientHeight;
       if (max <= 0) return;
       const next = Math.min(max, Math.max(0, scroller.scrollTop + event.deltaY));

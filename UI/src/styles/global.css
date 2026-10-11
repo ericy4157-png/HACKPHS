@@ -551,7 +551,7 @@ button {
 }
 
 .dash-brief {
-  overflow: auto;
+  overflow: hidden;
 }
 
 .dash-queue {
@@ -668,8 +668,12 @@ button {
 .dash-queue-card {
   display: grid;
   gap: 0.45rem;
+  flex: 1 1 auto;
   min-height: 0;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
   animation: dash-card-in 0.38s var(--ease);
 }
 
@@ -837,26 +841,39 @@ button {
 
 .sheet-head {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.85rem;
-  margin-bottom: 0.7rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.45rem;
+  margin-bottom: 0.85rem;
   min-width: 0;
 }
 
-.sheet-head-lead {
+.sheet-head .back-link {
+  align-self: flex-start;
+  padding: 0;
+}
+
+.sheet-head-row {
   display: flex;
-  align-items: baseline;
-  gap: 0.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.25rem;
+  min-width: 0;
+}
+
+.sheet-head-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
   min-width: 0;
 }
 
 .sheet-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.35rem, 2.2vw, 1.7rem);
+  font-size: clamp(1.45rem, 2.2vw, 1.85rem);
   letter-spacing: -0.03em;
-  white-space: nowrap;
+  line-height: 1.1;
 }
 
 .sheet-sub,
@@ -864,11 +881,29 @@ button {
   margin: 0;
   color: #6f6f76;
   font-size: 0.78rem;
-  white-space: nowrap;
 }
 
 .sheet-search {
-  min-width: min(22rem, 36vw);
+  flex: 0 0 min(22rem, 38%);
+  width: min(22rem, 38%);
+  max-width: 22rem;
+  min-width: 12rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid #2a2a2e;
+  background: #161618;
+  color: #ececf0;
+  font: inherit;
+  font-size: 0.86rem;
+}
+
+.sheet-search::placeholder {
+  color: #6f6f76;
+}
+
+.sheet-search:focus {
+  outline: none;
+  border-color: #4a4a52;
 }
 
 .sheet-body {
@@ -1866,16 +1901,16 @@ button {
     grid-template-rows: minmax(0, 1fr) minmax(11rem, 34%);
   }
 
-  .sheet-head {
-    flex-wrap: wrap;
-  }
-
-  .sheet-head-lead {
-    flex-wrap: wrap;
+  .sheet-head-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .sheet-search {
-    min-width: 100%;
+    flex: none;
+    width: 100%;
+    max-width: none;
+    min-width: 0;
   }
 
   .dash-inspect {

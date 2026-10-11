@@ -87,21 +87,23 @@ export function FlightSheet({ flights, changedIds = [], onBack }: Props) {
   return (
     <section className="sheet flight-sheet" data-open={Boolean(selected)} aria-label="Flight sheet">
       <header className="sheet-head">
-        <div className="sheet-head-lead">
-          <button type="button" className="back-link" onClick={onBack}>
-            ← Dashboard
-          </button>
-          <h1 className="sheet-title">Flight sheet</h1>
-          <p className="sheet-sub">{rows.length} legs · click a row for history</p>
+        <button type="button" className="back-link" onClick={onBack}>
+          ← Dashboard
+        </button>
+        <div className="sheet-head-row">
+          <div className="sheet-head-copy">
+            <h1 className="sheet-title">Flight sheet</h1>
+            <p className="sheet-sub">{rows.length} legs · click a row for history</p>
+          </div>
+          <input
+            className="sheet-search"
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="Search callsign, tail, airport…"
+            aria-label="Search flights"
+          />
         </div>
-        <input
-          className="flight-search sheet-search"
-          type="search"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-          placeholder="Search callsign, tail, airport…"
-          aria-label="Search flights"
-        />
       </header>
 
       <div className="sheet-body">
