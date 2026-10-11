@@ -142,7 +142,7 @@ function detailedPlan(flight, closedAirports, severity, { excludeTailIds = new S
   return buildReroutePlan(flight, closedAirports, { ...chosen, fuelChecks, excludeTailIds });
 }
 
-export function finish(flight, closedAirports, plan, { excludeTailIds = new Set() } = {}) {
+export function finish(flight, closedAirports, plan, { excludeTailIds = new Set(), forceSwap = false } = {}) {
   const comparison = buildComparison({
     flight,
     action: plan.action,
@@ -150,15 +150,19 @@ export function finish(flight, closedAirports, plan, { excludeTailIds = new Set(
     diversionAirport: plan.plan.diversionAirport,
     reroute: plan.plan.reroute,
     closedAirports,
-    excludeTailIds
+    excludeTailIds,
+    forceSwap
   });
   plan.plan.changeSummary = { timing: comparison.deltas.timing, aircraft: comparison.deltas.aircraft, layover: comparison.deltas.layover };
   const arrivalDelay = Math.max(0, comparison.deltas.arrivalChangeMinutes || plan.plan.estimatedDelayMinutes || 0);
+  // A swapped delayed leg leaves the original tail free — do not knock on its later trips.
+  const skipKnockOn = Boolean(comparison.deltas.aircraftSwapped && plan.action === "delay");
   const layers = buildPlanLayers({
     flight,
     action: plan.action,
     delayMinutes: arrivalDelay,
-    summary: plan.plan.reason || `${flight.id}: ${plan.action}`
+    summary: plan.plan.reason || `${flight.id}: ${plan.action}`,
+    skipKnockOn
   });
   return { ...plan, comparison, layers };
 }
@@ -167,7 +171,7 @@ export function finish(flight, closedAirports, plan, { excludeTailIds = new Set(
  * Delay / hold plan for ops or maintenance disruptions (no airport closure).
  * When `holdAfterReject` is set, emit hold_for_human_review instead of another delay.
  */
-export function buildDelayPlan(flight, { delayMinutes, reason, requiredChecks, excludeTailIds = new Set(), holdAfterReject = false } = {}) {
+export function buildDelayPlan(flight, { delayMinutes, reason, requiredChecks, excludeTailIds = new Set(), holdAfterReject = false, forceSwap = false } = {}) {
   const aircraft = fleet.find((item) => item.id === flight.aircraftId);
   if (holdAfterReject) {
     return buildHoldPlan(flight, { reason: reason || `Prior plan rejected for ${flight.id}; holding for human recovery`, requiredChecks, excludeTailIds });
@@ -184,6 +188,18 @@ export function buildDelayPlan(flight, { delayMinutes, reason, requiredChecks, e
       fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`,
       maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance check required before next rotation" : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`,
       revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes)
+    }
+  }, { excludeTailIds, forceSwap });
+}
+
+/** Cancel + rebook suggestion (decision support only). */
+export function buildCancelPlan(flight, closedAirports = [], { reason, excludeTailIds = new Set() } = {}) {
+  return finish(flight, closedAirports, {
+    ...standardFields(flight, "cancel"),
+    plan: {
+      reason: reason || "Cancelled to protect passengers and the rest of the rotation",
+      passengerRecovery: "Rebook to next available protected itinerary",
+      aircraftAction: "Hold at origin; await ramp and maintenance release"
     }
   }, { excludeTailIds });
 }

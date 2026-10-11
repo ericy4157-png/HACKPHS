@@ -224,6 +224,42 @@ button {
   will-change: transform;
 }
 
+/* Scroll-lock: freeze story parallax; the whole dashboard scrolls as one surface. */
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-studio {
+  pointer-events: auto;
+}
+
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-tablet {
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+}
+
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-main {
+  height: auto;
+  min-height: 100%;
+  grid-template-rows: auto auto auto;
+}
+
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-ops-grid {
+  min-height: unset;
+  align-items: start;
+}
+
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-brief,
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-queue {
+  overflow: visible;
+  min-height: unset;
+}
+
+.sky-shell[data-scroll-lock="true"][data-story="dashboard"] .dash-queue-card {
+  flex: 0 0 auto;
+  min-height: unset;
+  overflow: visible;
+  overscroll-behavior: auto;
+}
+
 .dash-rail {
   display: flex;
   flex-direction: column;
@@ -670,10 +706,7 @@ button {
   gap: 0.45rem;
   flex: 1 1 auto;
   min-height: 0;
-  overflow-x: hidden;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-width: thin;
+  overflow: visible;
   animation: dash-card-in 0.38s var(--ease);
 }
 
@@ -1826,12 +1859,49 @@ button {
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.35);
 }
 
+.swatch.traffic {
+  background: rgba(158, 182, 212, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.2);
+}
+
 .swatch.proposed {
   background: var(--route);
 }
 
+.swatch.rotation {
+  background: #ffe08a;
+}
+
 .swatch.flight {
   background: var(--accent);
+}
+
+.scroll-lock-chip {
+  position: fixed;
+  right: 1.1rem;
+  bottom: 1.1rem;
+  z-index: 40;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  background: rgba(12, 22, 40, 0.82);
+  color: rgba(244, 247, 251, 0.78);
+  font: inherit;
+  font-size: 0.78rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.55rem 0.8rem;
+  border-radius: 999px;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+}
+
+.scroll-lock-chip[data-on="true"] {
+  color: #0b1220;
+  background: #ffe08a;
+  border-color: #ffe08a;
+}
+
+.sky-shell[data-page="sheet"] .scroll-lock-chip {
+  display: none;
 }
 
 @media (max-width: 900px) {

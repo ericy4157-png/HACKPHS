@@ -142,7 +142,7 @@ export function simulatePassengerImpact(flight, delayMinutes) {
 /**
  * Build the full `layers` array for a plan: layer 0 is the disrupted leg, then knock-on and passenger layers.
  */
-export function buildPlanLayers({ flight, action, delayMinutes = 0, summary }) {
+export function buildPlanLayers({ flight, action, delayMinutes = 0, summary, skipKnockOn = false }) {
   const layer0 = {
     index: 0,
     kind: "disrupted_leg",
@@ -158,7 +158,7 @@ export function buildPlanLayers({ flight, action, delayMinutes = 0, summary }) {
     return [layer0, ...pax];
   }
 
-  const knockOn = simulateAircraftKnockOn(flight, delayMinutes);
+  const knockOn = skipKnockOn ? [] : simulateAircraftKnockOn(flight, delayMinutes);
   const passenger = simulatePassengerImpact(flight, delayMinutes);
 
   // Also check passengers on knock-on legs that still carry delay.

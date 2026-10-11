@@ -35,6 +35,8 @@ test("scope=active keeps full detail for planned and in-window flights only", ()
   for (const flight of compact) {
     assert.equal(flight.status, "ok");
     assert.equal(flight.inWindow, false);
-    assert.equal(flight.originalPath, undefined);
+    // Compact markers carry a lightweight 2-point path so the globe can draw every plane.
+    assert.equal(flight.originalPath?.length, 2);
+    assert.equal(flight.waypoints, undefined);
   }
 });

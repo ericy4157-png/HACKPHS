@@ -1,9 +1,9 @@
 # Recovery engine design
 
-Status: **partially implemented** — aircraft knock-on, passenger connection layers, competing reserve claims, and a live ops session (`src/opsSession.js`) that ticks the network clock, injects ordinary ops noise, and replans after each tick and accept/reject. Beam search / scored delay steps remain future work.  
+Status: **partially implemented** — aircraft knock-on, passenger layers, competing reserve claims, live ops session, and a **scored multi-future planner** (`src/recoveryCandidates.js`): delay steps, cancel, force-swap, divert; network pax-min cost; tail-break demotion when knock-on never absorbs; hub bank thinning on disasters. Full beam search across the open set remains future work.  
 Branch context: mid-size network (~80 operating tails, 5 reserves, ~60 airports, ~1,200 legs).
 
-The live session owns open disruptions and commitments. Scenario load seeds disaster or maintenance issues; `POST /api/tick` (and a wall timer) advances sim time; decisions freeze or reopen plans and trigger a greedy replan with claim locks.
+The live session owns open disruptions and commitments. Scenario load seeds disaster or maintenance issues (then thins hub banks); `POST /api/tick` advances sim time; decisions freeze or reopen plans and trigger a scored replan with claim locks.
 
 ## Goals and hard rules
 

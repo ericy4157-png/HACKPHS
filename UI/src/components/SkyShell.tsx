@@ -6,11 +6,13 @@ type Props = {
   mode: SkyMode;
   layers: StoryLayers;
   page?: "dashboard" | "network" | "sheet";
+  /** When true, story parallax is off; dashboard may scroll and the globe may zoom. */
+  scrollLocked?: boolean;
   onBrandClick?: () => void;
   children: ReactNode;
 };
 
-export function SkyShell({ mode, layers, page, onBrandClick, children }: Props) {
+export function SkyShell({ mode, layers, page, scrollLocked = false, onBrandClick, children }: Props) {
   const style = {
     "--story-p": String(layers.eased),
     "--dash-p": String(layers.dash),
@@ -26,6 +28,7 @@ export function SkyShell({ mode, layers, page, onBrandClick, children }: Props) 
       data-mode={mode}
       data-page={page ?? (layers.progress > 0.55 ? "network" : "dashboard")}
       data-story={layers.progress > 0.55 ? "network" : "dashboard"}
+      data-scroll-lock={scrollLocked}
       style={style}
     >
       <div className="sky-backdrop" aria-hidden>

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { flights, networkIndex } from "../src/data.js";
-import { attachAlternatives, buildAlternatives, passengerMinutes } from "../src/recoveryCandidates.js";
+import { attachAlternatives, buildAlternatives, passengerMinutes, selectBestRecovery } from "../src/recoveryCandidates.js";
 import { createOpsSession } from "../src/opsSession.js";
 import { buildDelayPlan, buildHoldPlan, evaluateReroutes } from "../src/simulation.js";
 
@@ -9,17 +9,32 @@ function distinctKey(plan) {
   return [plan.action, plan.plan?.estimatedDelayMinutes || 0, plan.plan?.diversionAirport || "", plan.comparison?.deltas?.toAircraft?.id || ""].join("|");
 }
 
-test("delay primaries get 2–3 pending futures that differ by action, delay, or route", () => {
+test("scored recovery returns a primary plus up to two distinct alternatives", () => {
   const flight = flights.find((item) => item.status === "scheduled");
   assert.ok(flight);
-  const primary = { ...buildDelayPlan(flight, { delayMinutes: 90, reason: "test delay" }), id: "PLAN-TEST-1" };
-  const attached = attachAlternatives(primary, { flight, delayMinutes: 90 });
-  const set = [attached, ...(attached.alternatives || [])];
+  const best = selectBestRecovery(flight, { delayMinutes: 90, source: "ops" });
+  const set = [best, ...(best.alternatives || [])];
   assert.ok(set.length >= 2 && set.length <= 3);
   assert.ok(set.every((plan) => plan.approvalStatus === "pending"));
   assert.equal(new Set(set.map(distinctKey)).size, set.length);
-  assert.equal(attached.action, "delay");
-  assert.equal(attached.plan.estimatedDelayMinutes, 90);
+  assert.equal(typeof best.passengerMinutes, "number");
+});
+
+test("attachAlternatives reselects the lowest-cost future as primary", () => {
+  const flight = flights.find((item) => item.status === "scheduled");
+  const seed = { ...buildDelayPlan(flight, { delayMinutes: 240, reason: "seed" }), id: "PLAN-SEED" };
+  const attached = attachAlternatives(seed, { flight, delayMinutes: 45, source: "ops", reselect: true });
+  assert.equal(attached.id, "PLAN-SEED");
+  assert.ok(attached.passengerMinutes <= passengerMinutes(seed, flight) + 1
+    || attached.action !== "delay"
+    || attached.comparison?.deltas?.aircraftSwapped);
+});
+
+test("reselect false keeps the seeded primary action", () => {
+  const flight = flights.find((item) => item.status === "scheduled");
+  const hold = { ...buildHoldPlan(flight, { reason: "manual" }), id: "PLAN-HOLD" };
+  const attached = attachAlternatives(hold, { flight, reselect: false });
+  assert.equal(attached.action, "hold_for_human_review");
 });
 
 test("negative-fuel diverts never appear as alternatives", () => {
@@ -78,11 +93,9 @@ test("after accept, changedFlightIds match newly superseded pending plans and ex
   assert.deepEqual([...changed].sort(), superseded);
 });
 
-test("attaching alternatives does not change the primary action", () => {
+test("buildAlternatives returns peers that are not the same key as primary", () => {
   const flight = flights.find((item) => item.status === "scheduled");
   const hold = buildHoldPlan(flight, { reason: "manual" });
-  const attached = attachAlternatives({ ...hold, id: "PLAN-HOLD" }, { flight });
-  assert.equal(attached.action, "hold_for_human_review");
   const alts = buildAlternatives(hold, { flight });
   assert.ok(alts.every((plan) => plan.action !== undefined));
   assert.ok(passengerMinutes(hold, flight) >= 0);

@@ -168,19 +168,26 @@ function unaffectedFlight(flight) {
 /** Compact marker for flights that do not need a recovery plan in the active window. */
 function compactFlight(flight, inWindow) {
   const origin = byIcao(flight.origin);
+  const destination = byIcao(flight.destination);
   const marker = flight.position || origin;
+  const path = [[origin.lat, origin.lon], [destination.lat, destination.lon]];
   return {
     id: flight.id,
     callsign: flight.callsign,
     origin: toIata(flight.origin),
     destination: toIata(flight.destination),
     status: "ok",
+    // Lightweight great-circle endpoints so the globe can draw every plane without full waypoints.
+    originalPath: path,
+    proposedPath: path,
     lat: marker.lat,
     lng: marker.lon,
     passengers: flight.passengers,
     dayIndex: flight.dayIndex,
     inWindow,
     compact: true,
+    originAirport: airportView(origin),
+    destinationAirport: airportView(destination),
     ...rosterOf(flight)
   };
 }

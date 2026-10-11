@@ -31,6 +31,8 @@ export default function App() {
   const [previewPlanId, setPreviewPlanId] = useState<string | null>(null);
   const [changedFlightIds, setChangedFlightIds] = useState<string[]>([]);
   const [scroller, setScroller] = useState<HTMLDivElement | null>(null);
+  /** Shift toggles this: story parallax scroll stays put so the globe is usable on the dashboard. */
+  const [scrollLocked, setScrollLocked] = useState(false);
   const { progress, layers, scrollTo } = useStoryScroll(scroller);
   const page: AppPage = appPage === "sheet" ? "sheet" : progress > 0.55 ? "network" : "dashboard";
   const inNetwork = page === "network";
@@ -45,33 +47,51 @@ export default function App() {
   };
   const goSheet = () => setAppPage("sheet");
 
+  // Shift = toggle scroll lock (ignore when typing in a field).
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Shift" || event.repeat) return;
+      const target = event.target;
+      if (target instanceof HTMLElement) {
+        const tag = target.tagName;
+        if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable) return;
+      }
+      setScrollLocked((locked) => !locked);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
   // Globe sits above the scroller in the network so drag still works; wheel still turns the page.
   useEffect(() => {
     if (!scroller) return;
     const shell = scroller.closest(".sky-shell");
     if (!shell) return;
-    const onWheel = (event: WheelEvent) => {
-      const target = event.target;
+    const onWheel = (event: Event) => {
+      const wheel = event as WheelEvent;
+      // Sticky scroll-lock only (not wheel.shiftKey — that stayed true after toggling
+      // off with Shift and made unlock feel broken).
+      if (scrollLocked) return;
+      const target = wheel.target;
       if (!(target instanceof Element)) return;
       if (
         target.closest(".rail-left") ||
         target.closest(".sheet") ||
         target.closest(".flight-sheet") ||
-        target.closest(".dash-queue") ||
         target.closest(".dash-inspect")
       ) {
         return;
       }
       const max = scroller.scrollHeight - scroller.clientHeight;
       if (max <= 0) return;
-      const next = Math.min(max, Math.max(0, scroller.scrollTop + event.deltaY));
+      const next = Math.min(max, Math.max(0, scroller.scrollTop + wheel.deltaY));
       if (next === scroller.scrollTop) return;
-      event.preventDefault();
+      wheel.preventDefault();
       scroller.scrollTop = next;
     };
     shell.addEventListener("wheel", onWheel, { passive: false });
     return () => shell.removeEventListener("wheel", onWheel);
-  }, [scroller]);
+  }, [scroller, scrollLocked]);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,21 +179,31 @@ export default function App() {
   };
 
   const globeFlights = useMemo(() => {
-    if (!selectedId || !previewPlanId) return flights;
-    return flights.map((flight) => {
-      if (flight.id !== selectedId) return flight;
-      const alt = flight.alternatives?.find((item) => item.planId === previewPlanId);
-      if (!alt) return flight;
-      return {
-        ...flight,
-        proposedPath: alt.proposedPath ?? flight.proposedPath,
-        proposedRoute: alt.proposedRoute ?? flight.proposedRoute,
-        action: alt.action ?? flight.action,
-        delayMinutes: alt.delayMinutes ?? flight.delayMinutes,
-        aircraft: alt.aircraft ?? flight.aircraft,
-      };
-    });
-  }, [flights, selectedId, previewPlanId]);
+    // Prefer live/active detail, but keep every spreadsheet (roster) leg on the globe.
+    const byId = new Map<string, Flight>();
+    for (const row of roster) byId.set(row.id, row);
+    for (const flight of flights) {
+      const prev = byId.get(flight.id);
+      byId.set(flight.id, prev ? { ...prev, ...flight } : flight);
+    }
+    let merged = [...byId.values()];
+    if (selectedId && previewPlanId) {
+      merged = merged.map((flight) => {
+        if (flight.id !== selectedId) return flight;
+        const alt = flight.alternatives?.find((item) => item.planId === previewPlanId);
+        if (!alt) return flight;
+        return {
+          ...flight,
+          proposedPath: alt.proposedPath ?? flight.proposedPath,
+          proposedRoute: alt.proposedRoute ?? flight.proposedRoute,
+          action: alt.action ?? flight.action,
+          delayMinutes: alt.delayMinutes ?? flight.delayMinutes,
+          aircraft: alt.aircraft ?? flight.aircraft,
+        };
+      });
+    }
+    return merged;
+  }, [flights, roster, selectedId, previewPlanId]);
 
   // Compact markers from scope=active lack route detail; hydrate from GET /api/flights/:id.
   useEffect(() => {
@@ -235,7 +265,7 @@ export default function App() {
 
   return (
     <>
-      <SkyShell mode={mode} layers={layers} page={page} onBrandClick={goDashboard}>
+      <SkyShell mode={mode} layers={layers} page={page} scrollLocked={scrollLocked} onBrandClick={goDashboard}>
         <DashboardHero
           key={incident?.id ?? "dash"}
           incident={incident}
@@ -305,17 +335,31 @@ export default function App() {
         />
         <GlobeView
           flights={globeFlights}
+          roster={roster.length ? roster : flights}
           selectedId={selectedId}
           changedIds={changedFlightIds}
           onSelect={(id) => {
-            if (!inNetwork) return;
+            if (!inNetwork && !scrollLocked) return;
             setSelectedId(id);
-            if (id) setLeftTab("flights");
+            if (id) {
+              setLeftTab("flights");
+              if (!inNetwork) goNetwork();
+            }
           }}
           mode={mode}
           focus={incident?.center ?? null}
-          interactive={inNetwork}
+          interactive={inNetwork || scrollLocked}
+          allowZoom={scrollLocked}
         />
+        <button
+          type="button"
+          className="scroll-lock-chip"
+          data-on={scrollLocked}
+          onClick={() => setScrollLocked((locked) => !locked)}
+          title="Press Shift to toggle. When locked: no parallax, globe zooms, dashboard scrolls."
+        >
+          {scrollLocked ? "Scroll locked · Shift" : "Scroll free · Shift"}
+        </button>
       </SkyShell>
       {demoNotice && (
         <div className="demo-banner" role="status">

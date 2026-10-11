@@ -198,7 +198,7 @@ export type ScenarioSnapshot = {
 export type ArcDatum = {
   id: string;
   flightId: string;
-  kind: "original" | "proposed";
+  kind: "original" | "proposed" | "traffic" | "rotation";
   startLat: number;
   startLng: number;
   endLat: number;
@@ -216,4 +216,15 @@ export type PointDatum = {
   status: FlightStatus;
   size: number;
   color: string;
+};
+
+/** Layover / stop airport marker when a tail's full rotation is selected. */
+export type LayoverDatum = {
+  id: string;
+  code: string;
+  name: string;
+  city: string;
+  lat: number;
+  lng: number;
+  label: string;
 };

@@ -9,10 +9,9 @@ import {
 import { networkIndex } from "./data.js";
 import { createRng, maybeSpawnOpsNoise } from "./opsNoise.js";
 import { SCENARIO_COUNT, buildBaselineSnapshot, buildOperationalSnapshot } from "./scenarios.js";
-import { attachAlternatives } from "./recoveryCandidates.js";
+import { applyHubBankThinning, attachAlternatives } from "./recoveryCandidates.js";
 import {
   buildDelayPlan,
-  buildDisasterPlan,
   closedAirportsForEvent,
   maintenanceDisruptions
 } from "./simulation.js";
@@ -103,25 +102,22 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
     if (!flight) return null;
     const rejects = rejectCounts.get(disruption.flightId) || 0;
 
-    if (disruption.source === "disaster") {
-      if (rejects > 0) {
-        return buildDelayPlan(flight, {
-          delayMinutes: disruption.delayMinutes || 90,
-          reason: `Prior plan rejected for ${flight.id}; holding for manual recovery`,
-          holdAfterReject: true,
-          excludeTailIds
-        });
-      }
-      return buildDisasterPlan(flight, closedAirports(), disasterSeverity(), { excludeTailIds });
+    if (rejects > 0) {
+      return buildDelayPlan(flight, {
+        delayMinutes: disruption.delayMinutes || 90,
+        reason: `Prior plan rejected for ${flight.id}; holding for manual recovery`,
+        holdAfterReject: true,
+        excludeTailIds
+      });
     }
 
+    // Seed plan for attachAlternatives(reselect); scoring picks the real primary.
     return buildDelayPlan(flight, {
-      delayMinutes: disruption.delayMinutes,
-      reason: disruption.reason,
+      delayMinutes: disruption.delayMinutes || (disasterSeverity() === "severe" ? 240 : 90),
+      reason: disruption.reason || "Recovery under evaluation",
       requiredChecks: disruption.source === "maintenance"
         ? ["Maintenance control releases the aircraft or confirms a swap", "Dispatcher validates crew duty and onward connections"]
         : undefined,
-      holdAfterReject: rejects > 0,
       excludeTailIds
     });
   }
@@ -166,30 +162,39 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
 
       const prev = previousByFlight.get(item.flightId);
       const id = prev?.approvalStatus === "pending" ? prev.id : nextPlanId(item.source[0].toUpperCase());
-      const claimed = claimedTailFromPlan(plan);
-      if (claimed) exclude.add(claimed);
-
-      let supersededReason = null;
-      if (prev?.approvalStatus === "pending" && reason !== "scenario load") {
-        if (fingerprint(prev) !== fingerprint({ ...plan, layers: plan.layers })) {
-          supersededReason = reason;
-          changed.push(item.flightId);
-        }
-      }
-
       const flight = networkIndex.flightById.get(item.flightId);
-      nextPlans.push(attachAlternatives({
+      const rejected = (rejectCounts.get(item.flightId) || 0) > 0;
+      const recovered = attachAlternatives({
         ...plan,
         id,
         approvalStatus: "pending",
         planRevision,
-        supersededReason
+        supersededReason: null
       }, {
         flight,
         closedAirports: closedAirports(),
         excludeTailIds: exclude,
-        delayMinutes: item.delayMinutes
-      }));
+        delayMinutes: item.delayMinutes,
+        source: item.source || "ops",
+        severity: item.severity || disasterSeverity(),
+        forceAction: rejected ? "hold" : (item.forceAction || null),
+        reason: item.reason,
+        // After a reject, keep the hold seed — do not re-score back into the same delay.
+        reselect: !rejected
+      });
+
+      let supersededReason = null;
+      if (prev?.approvalStatus === "pending" && reason !== "scenario load") {
+        if (fingerprint(prev) !== fingerprint(recovered)) {
+          supersededReason = reason;
+          changed.push(item.flightId);
+        }
+      }
+      recovered.supersededReason = supersededReason;
+
+      const claimed = claimedTailFromPlan(recovered);
+      if (claimed) exclude.add(claimed);
+      nextPlans.push(recovered);
     }
 
     plans = nextPlans;
@@ -250,6 +255,7 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
       rng = createRng(seed + (refreshNumber + 1) * 1009);
       const snap = buildOperationalSnapshot(refreshNumber);
       seedMeta(snap);
+      const closed = closedAirports();
       for (const plan of snap.plans) {
         openDisruptions.set(plan.flightId, {
           flightId: plan.flightId,
@@ -261,6 +267,7 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
           status: "open"
         });
       }
+      applyHubBankThinning(openDisruptions, closed);
       replanAll("scenario load");
       return session.snapshot();
     },

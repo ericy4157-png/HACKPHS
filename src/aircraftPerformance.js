@@ -59,6 +59,15 @@ export const OPS_TICK_SIM_MINUTES = 5;
 export const OPS_MINI_TARGET_OPEN = 2;
 export const OPS_MINI_DELAY_MINUTES = [20, 35, 45, 60, 75, 90];
 export const OPS_SESSION_SEED = 42;
+/** Recovery planner: delay steps to score, tail-break threshold, hub thinning, cost weights. */
+export const PLANNER_DELAY_STEPS_MINUTES = [30, 45, 90, 180, 240];
+export const TAIL_BREAK_UNABSORBED_LEGS = 3;
+/** Keep this fraction of highest-pax spokes at an affected hub; cancel the rest instead of delaying all. */
+export const HUB_THIN_KEEP_FRACTION = 0.55;
+export const PLANNER_CANCEL_PAX_WEIGHT = 600;
+export const PLANNER_SWAP_FLAT_COST = 50;
+export const PLANNER_DIVERT_FLAT_COST = 30;
+export const PLANNER_TAIL_BREAK_DELAY_PENALTY = 50_000;
 export const CREW_REPORT_MINUTES = 60;
 export const CREW_RELEASE_MINUTES = 30;
 export const LOAD_FACTOR_RANGE = [0.65, 0.95];

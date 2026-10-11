@@ -226,14 +226,14 @@ function proposedWaypoints(flight, origin, divert, destination, routeWaypoints) 
  * Build the planned-versus-proposed itinerary for one review item.
  * Times, aircraft swaps, and layovers are modeled recovery suggestions, not clearances.
  */
-export function buildComparison({ flight, action, delayMinutes = 0, diversionAirport, reroute, closedAirports = [], excludeTailIds = new Set() } = {}) {
+export function buildComparison({ flight, action, delayMinutes = 0, diversionAirport, reroute, closedAirports = [], excludeTailIds = new Set(), forceSwap = false } = {}) {
   const { aircraft, itinerary: before } = baseline(flight);
   const origin = byIcao(flight.origin);
   const destination = byIcao(flight.destination);
   const swapOpts = { excludeTailIds };
 
   if (action === "delay") {
-    const swapNeeded = flight.status !== "airborne" && aircraft.maintenanceDueInHours < 8;
+    const swapNeeded = flight.status !== "airborne" && (forceSwap || aircraft.maintenanceDueInHours < 8);
     const delayedDeparture = flight.scheduledOffsetMinutes + delayMinutes;
     const { tail: swap, swapCheck } = swapNeeded
       ? replacementTail(flight, origin.icao, { fromOffset: delayedDeparture, untilOffset: delayedDeparture + before.blockMinutes }, swapOpts)
@@ -245,7 +245,9 @@ export function buildComparison({ flight, action, delayMinutes = 0, diversionAir
       ? `The aircraft is already airborne, so the departure time stays put. ${arrivalSentence(destination.icao, delayMinutes)} The track itself does not change.`
       : `Departure slips ${formatClock(delayMinutes)}. ${arrivalSentence(destination.icao, delayMinutes)} Block time stays ${formatClock(before.blockMinutes)} because the track is unchanged.`;
     const aircraftText = swap
-      ? `Plane switch at ${origin.icao} (${origin.city}) before departure. ${flight.aircraftId} (${flight.aircraft}) is ${aircraft.maintenanceDueInHours} flight hours from maintenance, so ${swap.id} (${swap.type}) takes the delayed leg.`
+      ? forceSwap && aircraft.maintenanceDueInHours >= 8
+        ? `Plane switch at ${origin.icao} (${origin.city}) to protect the rest of ${flight.aircraftId}'s rotation. ${swap.id} (${swap.type}) takes the delayed leg so later trips stay on time.`
+        : `Plane switch at ${origin.icao} (${origin.city}) before departure. ${flight.aircraftId} (${flight.aircraft}) is ${aircraft.maintenanceDueInHours} flight hours from maintenance, so ${swap.id} (${swap.type}) takes the delayed leg.`
       : `No plane switch. ${flight.aircraftId} (${flight.aircraft}) keeps the flight. Maintenance is due in ${aircraft.maintenanceDueInHours} flight hours.`;
     return pack(before, after, {
       swapAt: swap ? origin.icao : null,

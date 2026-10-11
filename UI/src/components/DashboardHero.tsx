@@ -123,7 +123,7 @@ export function DashboardHero({
   incident,
   flights,
   onEnterNetwork,
-  onReviewDecisions,
+  onReviewDecisions: _onReviewDecisions,
   onOpenSheet,
   onDecision,
   onInspectFlight,

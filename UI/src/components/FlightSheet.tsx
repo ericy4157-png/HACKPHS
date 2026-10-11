@@ -23,8 +23,8 @@ function approvalLabel(flight: Flight): string {
 }
 
 function refuelLabel(flight: Flight): string {
-  if ((flight.refuelMinutes ?? 0) > 0) return `${flight.refuelMinutes} min before dep`;
-  if (flight.nextRefuel) return `${flight.nextRefuel.minutes} min on ${flight.nextRefuel.flightId}`;
+  if ((flight.refuelMinutes ?? 0) > 0) return `Refuel ${flight.refuelMinutes}m`;
+  if (flight.nextRefuel) return `Next uplift: ${flight.nextRefuel.flightId} (${flight.nextRefuel.minutes}m)`;
   return "No uplift";
 }
 
