@@ -1,20 +1,41 @@
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type { SkyMode } from "../hooks/useDayNight";
+import type { StoryLayers } from "../hooks/useStoryScroll";
 
 type Props = {
   mode: SkyMode;
+  layers: StoryLayers;
+  page?: "dashboard" | "network" | "sheet";
+  onBrandClick?: () => void;
   children: ReactNode;
 };
 
-export function SkyShell({ mode, children }: Props) {
+export function SkyShell({ mode, layers, page, onBrandClick, children }: Props) {
+  const style = {
+    "--story-p": String(layers.eased),
+    "--dash-p": String(layers.dash),
+    "--swoosh-p": String(layers.swoosh),
+    "--globe-p": String(layers.globe),
+    "--rail-p": String(layers.rail),
+    "--sky-p": String(layers.sky),
+  } as CSSProperties;
+
   return (
-    <div className="sky-shell" data-mode={mode}>
+    <div
+      className="sky-shell"
+      data-mode={mode}
+      data-page={page ?? (layers.progress > 0.55 ? "network" : "dashboard")}
+      data-story={layers.progress > 0.55 ? "network" : "dashboard"}
+      style={style}
+    >
       <div className="sky-backdrop" aria-hidden>
         <div className="sky-stars" />
       </div>
       <div className="sky-content">
         <header className="brand">
-          <h1 className="brand-mark">Skyward</h1>
+          <button type="button" className="brand-mark" onClick={onBrandClick} title="Back to dashboard">
+            Skyward
+          </button>
           <p className="brand-tag">Disaster flight recovery</p>
         </header>
         {children}

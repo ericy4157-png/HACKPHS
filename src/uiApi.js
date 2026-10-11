@@ -24,6 +24,42 @@ const toIata = (icao) => ICAO_TO_IATA[icao] || icao;
 const withIata = (text) => (text || "").replace(ICAO_PATTERN, (code) => ICAO_TO_IATA[code]);
 const byIcao = (icao) => networkIndex.airportByIcao.get(icao);
 const toPath = (waypoints) => waypoints.map((point) => [point.lat, point.lon]);
+const clockAt = (offsetMinutes) => new Date(Date.now() + offsetMinutes * 60_000).toISOString();
+
+/** Additive roster fields for the spreadsheet. Existing UI keys keep their meanings. */
+function rosterOf(flight) {
+  const legs = networkIndex.legsByTail.get(flight.aircraftId) || [];
+  const index = legs.findIndex((leg) => leg.id === flight.id);
+  const nextRefuel = legs.slice(Math.max(0, index + 1)).find((leg) => (leg.refuelMinutes || 0) > 0);
+  return {
+    aircraftId: flight.aircraftId || null,
+    aircraftType: flight.aircraft || null,
+    departureAt: Number.isFinite(flight.scheduledOffsetMinutes) ? clockAt(flight.scheduledOffsetMinutes) : null,
+    arrivalAt: Number.isFinite(flight.arrivalOffsetMinutes) ? clockAt(flight.arrivalOffsetMinutes) : null,
+    blockMinutes: flight.blockMinutes ?? null,
+    refuelMinutes: flight.refuelMinutes ?? 0,
+    nextRefuel: nextRefuel
+      ? {
+          flightId: nextRefuel.id,
+          minutes: nextRefuel.refuelMinutes,
+          departureAt: clockAt(nextRefuel.scheduledOffsetMinutes),
+        }
+      : null,
+    fuel: flight.fuel
+      ? {
+          departureKg: flight.fuel.departureKg,
+          arrivalKg: flight.fuel.arrivalKg,
+          reserveKg: flight.fuel.reserveKg,
+          onboardKgNow: flight.fuel.onboardKgNow ?? null,
+        }
+      : null,
+    fuelMinutes: flight.fuelMinutes ?? 0,
+    legNumber: flight.legNumber ?? null,
+    tripsOnTail: legs.length || 1,
+    rotationId: flight.rotationId || null,
+    opsStatus: flight.status,
+  };
+}
 
 function airportView(airport) {
   return { code: toIata(airport.icao), icao: airport.icao, name: airport.name, city: airport.city, lat: airport.lat, lng: airport.lon };
@@ -83,7 +119,29 @@ function affectedFlight(flight, plan) {
     swapCheck: deltas.swapCheck,
     layers: plan.layers,
     planRevision: plan.planRevision,
-    supersededReason: plan.supersededReason || undefined
+    supersededReason: plan.supersededReason || undefined,
+    passengerMinutes: plan.passengerMinutes,
+    label: plan.label,
+    alternatives: plan.approvalStatus === "pending" && plan.alternatives?.length
+      ? plan.alternatives.map((alt) => slimAlternative(flight, alt))
+      : undefined,
+    ...rosterOf(flight)
+  };
+}
+
+/** Compact future for the picker and globe preview. */
+function slimAlternative(flight, plan) {
+  const row = affectedFlight({ ...flight }, { ...plan, alternatives: undefined });
+  return {
+    planId: plan.id,
+    action: row.action,
+    delayMinutes: row.delayMinutes,
+    proposedPath: row.proposedPath,
+    proposedRoute: row.proposedRoute,
+    passengerMinutes: plan.passengerMinutes ?? row.passengerMinutes,
+    label: plan.label,
+    layers: row.layers,
+    aircraft: row.aircraft
   };
 }
 
@@ -102,7 +160,8 @@ function unaffectedFlight(flight) {
     id: flight.id, callsign: flight.callsign, origin: toIata(flight.origin), destination: toIata(flight.destination),
     status: "ok", originalPath: path, proposedPath: path, delayMinutes: 0, passengers: flight.passengers, lat: marker.lat, lng: marker.lon,
     originAirport: airportView(origin), destinationAirport: airportView(destination),
-    originalRoute: `${toIata(flight.origin)} → ${toIata(flight.destination)}`, proposedRoute: `${toIata(flight.origin)} → ${toIata(flight.destination)}`
+    originalRoute: `${toIata(flight.origin)} → ${toIata(flight.destination)}`, proposedRoute: `${toIata(flight.origin)} → ${toIata(flight.destination)}`,
+    ...rosterOf(flight)
   };
 }
 
@@ -121,7 +180,8 @@ function compactFlight(flight, inWindow) {
     passengers: flight.passengers,
     dayIndex: flight.dayIndex,
     inWindow,
-    compact: true
+    compact: true,
+    ...rosterOf(flight)
   };
 }
 
@@ -133,6 +193,7 @@ function compactFlight(flight, inWindow) {
  * Optional `scope`:
  * - undefined / "full" (default): every flight in full detail (unchanged contract)
  * - "active": full detail for planned or in-window flights; compact markers for the rest
+ * - "roster": every flight with schedule/fuel/tail fields, without heavy waypoint paths
  */
 export function toUiFlights(snapshot, { scope } = {}) {
   const plans = primaryPlans(snapshot);
@@ -140,11 +201,18 @@ export function toUiFlights(snapshot, { scope } = {}) {
   const windowHours = eventWindows.length ? Math.max(...eventWindows) : DEFAULT_WINDOW_HOURS;
   const inWindow = new Set(flightsInWindow(windowHours).map((flight) => flight.id));
   const activeOnly = scope === "active";
+  const rosterOnly = scope === "roster";
   return flights.map((flight) => {
     const windowed = inWindow.has(flight.id);
-    if (plans.has(flight.id)) {
-      return { ...affectedFlight(flight, plans.get(flight.id)), dayIndex: flight.dayIndex, inWindow: windowed };
+    const planned = plans.has(flight.id)
+      ? { ...affectedFlight(flight, plans.get(flight.id)), dayIndex: flight.dayIndex, inWindow: windowed }
+      : null;
+    if (rosterOnly) {
+      const row = planned || { ...unaffectedFlight(flight), dayIndex: flight.dayIndex, inWindow: windowed };
+      const { originalPath, proposedPath, waypoints, alternatives, ...rest } = row;
+      return rest;
     }
+    if (planned) return planned;
     if (activeOnly && !windowed) return compactFlight(flight, false);
     return { ...unaffectedFlight(flight), dayIndex: flight.dayIndex, inWindow: windowed };
   });

@@ -9,6 +9,7 @@ import {
 import { networkIndex } from "./data.js";
 import { createRng, maybeSpawnOpsNoise } from "./opsNoise.js";
 import { SCENARIO_COUNT, buildBaselineSnapshot, buildOperationalSnapshot } from "./scenarios.js";
+import { attachAlternatives } from "./recoveryCandidates.js";
 import {
   buildDelayPlan,
   buildDisasterPlan,
@@ -57,6 +58,8 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
   let planRevision = 0;
   let lastOpsNote = null;
   let lastReplanReason = null;
+  /** @type {string[]} */
+  let lastChangedFlightIds = [];
   let rng = createRng(seed);
   /** @type {Map<string, object>} */
   let openDisruptions = new Map();
@@ -141,6 +144,7 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
 
     const previousByFlight = new Map(plans.map((plan) => [plan.flightId, plan]));
     const nextPlans = [];
+    const changed = [];
 
     for (const [flightId, committed] of commitments) {
       nextPlans.push({
@@ -169,19 +173,27 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
       if (prev?.approvalStatus === "pending" && reason !== "scenario load") {
         if (fingerprint(prev) !== fingerprint({ ...plan, layers: plan.layers })) {
           supersededReason = reason;
+          changed.push(item.flightId);
         }
       }
 
-      nextPlans.push({
+      const flight = networkIndex.flightById.get(item.flightId);
+      nextPlans.push(attachAlternatives({
         ...plan,
         id,
         approvalStatus: "pending",
         planRevision,
         supersededReason
-      });
+      }, {
+        flight,
+        closedAirports: closedAirports(),
+        excludeTailIds: exclude,
+        delayMinutes: item.delayMinutes
+      }));
     }
 
     plans = nextPlans;
+    lastChangedFlightIds = changed;
     lastReplanReason = reason;
     meta.refreshedAt = new Date().toISOString();
   }
@@ -207,6 +219,7 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
     planRevision = 0;
     lastOpsNote = null;
     lastReplanReason = null;
+    lastChangedFlightIds = [];
   }
 
   function clearWork() {
@@ -267,14 +280,20 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
       return session.snapshot();
     },
 
-    decide(flightId, decision, decidedBy = "unattributed-operator") {
+    decide(flightId, decision, decidedBy = "unattributed-operator", { planId } = {}) {
       const plan = plans.find((item) => item.flightId === flightId);
       if (!plan) return null;
       const decidedAt = new Date().toISOString();
       planRevision += 1;
 
       if (decision === "accept") {
-        commitments.set(flightId, { plan: { ...plan }, decidedAt, decidedBy });
+        let chosen = plan;
+        if (planId && planId !== plan.id) {
+          const alt = (plan.alternatives || []).find((item) => item.id === planId);
+          if (alt) chosen = alt;
+        }
+        const { alternatives: _alts, ...committed } = chosen;
+        commitments.set(flightId, { plan: { ...committed, flightId }, decidedAt, decidedBy });
         const disruption = openDisruptions.get(flightId);
         if (disruption) disruption.status = "resolved";
         replanAll(`decision accepted on ${flightId}`);
@@ -307,7 +326,8 @@ export function createOpsSession({ seed = OPS_SESSION_SEED } = {}) {
         tickSeconds: Math.round(OPS_TICK_WALL_MS / 1000),
         lastTickAt,
         lastOpsNote,
-        planRevision
+        planRevision,
+        changedFlightIds: lastChangedFlightIds
       };
     },
 

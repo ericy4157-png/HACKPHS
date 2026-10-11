@@ -29,41 +29,120 @@ function rerouteOrError(flight, destination, closedAirports) {
   }
 }
 
-function detailedPlan(flight, closedAirports, severity, { excludeTailIds = new Set() } = {}) {
-  const aircraft = fleet.find((item) => item.id === flight.aircraftId);
-  const action = flightImpact(flight, closedAirports, severity);
-  if (!action) return null;
-  const currentPosition = flight.position || airport(flight.origin);
-  const standard = {
-    flightId: flight.id, callsign: flight.callsign, aircraft: flight.aircraftId, passengers: flight.passengers,
-    action, approvalStatus: "pending", generatedAt: new Date().toISOString(),
-    routeContext: { origin: airport(flight.origin), originalDestination: airport(flight.destination), currentPosition: flight.position || airport(flight.origin) },
-    requiredChecks: ["Dispatcher validates NOTAM, weather, ETOPS/performance, crew duty and traffic-flow constraints", "ATC and airport operations acceptance required before execution"]
+function standardFields(flight, action) {
+  return {
+    flightId: flight.id,
+    callsign: flight.callsign,
+    aircraft: flight.aircraftId,
+    passengers: flight.passengers,
+    action,
+    approvalStatus: "pending",
+    generatedAt: new Date().toISOString(),
+    routeContext: {
+      origin: airport(flight.origin),
+      originalDestination: airport(flight.destination),
+      currentPosition: flight.position || airport(flight.origin)
+    },
+    requiredChecks: [
+      "Dispatcher validates NOTAM, weather, ETOPS/performance, crew duty and traffic-flow constraints",
+      "ATC and airport operations acceptance required before execution"
+    ]
   };
-  const opts = { excludeTailIds };
-  if (action === "cancel") return finish(flight, closedAirports, { ...standard, plan: { reason: "Departure airport unavailable during severe disruption", passengerRecovery: "Rebook to next available protected itinerary", aircraftAction: "Hold at origin; await ramp and maintenance release" } }, opts);
-  if (action === "delay") {
-    const delayMinutes = severity === "severe" ? 240 : 90;
-    return finish(flight, closedAirports, { ...standard, plan: { reason: "Origin or destination operating below capacity", estimatedDelayMinutes: delayMinutes, fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance check required before next rotation" : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`, revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes) } }, opts);
-  }
+}
+
+/**
+ * Ranked diversion attempts for a flight, including fuel-unsafe ones so callers can explain a hold.
+ */
+export function evaluateReroutes(flight, closedAirports) {
+  const currentPosition = flight.position || airport(flight.origin);
   const alternates = diversionOptions(currentPosition, flight.aircraft, closedAirports, airport(flight.destination));
-  if (!alternates.length) return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: "No compliant diversion airport found in modeled network" } }, opts);
-  // Alternates are already ranked; take the best one whose fuel margin is not negative.
   const evaluated = alternates.map((alternate) => ({ alternate, ...rerouteOrError(flight, alternate.icao, closedAirports) }));
   const fuelChecks = evaluated.map(({ alternate, reroute, error }) => (reroute
     ? { airport: alternate.icao, fuelMarginMinutes: reroute.operationalAssessment.fuelMarginMinutes }
     : { airport: alternate.icao, fuelMarginMinutes: null, error }));
-  const chosen = evaluated.find(({ reroute }) => reroute && reroute.operationalAssessment.fuelMarginMinutes >= 0);
-  if (!chosen) {
-    const margins = fuelChecks.map((check) => (check.error ? `${check.airport} no route` : `${check.airport} ${check.fuelMarginMinutes} min`)).join(", ");
-    return finish(flight, closedAirports, { ...standard, action: "hold_for_human_review", plan: { reason: `Destination ${flight.destination} unavailable and no alternate meets the fuel reserve (fuel margin: ${margins})`, alternateFuelChecks: fuelChecks } }, opts);
-  }
-  const destination = chosen.alternate.icao;
-  const reroute = chosen.reroute;
-  return finish(flight, closedAirports, { ...standard, plan: { reason: `Destination ${flight.destination} unavailable`, diversionAirport: destination, diversionRunwayCheck: chosen.alternate.runwayCheck, alternateFuelChecks: fuelChecks, reroute, fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`, maintenance: aircraft.maintenanceDueInHours < 8 ? "Maintenance control approval required at diversion" : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`, onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}` } }, opts);
+  const safe = evaluated.filter(({ reroute }) => reroute && reroute.operationalAssessment.fuelMarginMinutes >= 0);
+  return { alternates, evaluated, fuelChecks, safe };
 }
 
-function finish(flight, closedAirports, plan, { excludeTailIds = new Set() } = {}) {
+/** One finished reroute plan to a fuel-safe alternate. */
+export function buildReroutePlan(flight, closedAirports, { alternate, reroute, fuelChecks = [], excludeTailIds = new Set() } = {}) {
+  const aircraft = fleet.find((item) => item.id === flight.aircraftId);
+  const destination = alternate.icao;
+  return finish(flight, closedAirports, {
+    ...standardFields(flight, "reroute"),
+    plan: {
+      reason: `Destination ${flight.destination} unavailable`,
+      diversionAirport: destination,
+      diversionRunwayCheck: alternate.runwayCheck,
+      alternateFuelChecks: fuelChecks,
+      reroute,
+      fuelAndRamp: `Confirm landing fuel reserve; arrange fuel, gate and handling at ${destination}`,
+      maintenance: aircraft.maintenanceDueInHours < 8
+        ? "Maintenance control approval required at diversion"
+        : `Maintenance check remains due in ${aircraft.maintenanceDueInHours} flight hours`,
+      onwardRecovery: `Protect passengers and evaluate recovery service to ${flight.destination}`
+    }
+  }, { excludeTailIds });
+}
+
+/** Hold for a dispatcher. Always pending; nothing is sent. */
+export function buildHoldPlan(flight, { reason, requiredChecks, excludeTailIds = new Set() } = {}) {
+  return finish(flight, [], {
+    ...standardFields(flight, "hold_for_human_review"),
+    requiredChecks: requiredChecks || ["Prior recovery plan was rejected; dispatcher builds a manual option"],
+    plan: { reason: reason || `Holding ${flight.id} for human recovery` }
+  }, { excludeTailIds });
+}
+
+function detailedPlan(flight, closedAirports, severity, { excludeTailIds = new Set() } = {}) {
+  const aircraft = fleet.find((item) => item.id === flight.aircraftId);
+  const action = flightImpact(flight, closedAirports, severity);
+  if (!action) return null;
+  const opts = { excludeTailIds };
+  if (action === "cancel") {
+    return finish(flight, closedAirports, {
+      ...standardFields(flight, "cancel"),
+      plan: {
+        reason: "Departure airport unavailable during severe disruption",
+        passengerRecovery: "Rebook to next available protected itinerary",
+        aircraftAction: "Hold at origin; await ramp and maintenance release"
+      }
+    }, opts);
+  }
+  if (action === "delay") {
+    const delayMinutes = severity === "severe" ? 240 : 90;
+    return finish(flight, closedAirports, {
+      ...standardFields(flight, "delay"),
+      plan: {
+        reason: "Origin or destination operating below capacity",
+        estimatedDelayMinutes: delayMinutes,
+        fuelAndRamp: `Fuel uplift after gate assignment; minimum turnaround ${aircraft.minimumTurnMinutes} min`,
+        maintenance: aircraft.maintenanceDueInHours < 8
+          ? "Maintenance check required before next rotation"
+          : `Maintenance due in ${aircraft.maintenanceDueInHours} flight hours`,
+        revisedDeparture: nowIso(flight.scheduledOffsetMinutes + delayMinutes)
+      }
+    }, opts);
+  }
+  const { alternates, fuelChecks, safe } = evaluateReroutes(flight, closedAirports);
+  if (!alternates.length) {
+    return finish(flight, closedAirports, {
+      ...standardFields(flight, "hold_for_human_review"),
+      plan: { reason: "No compliant diversion airport found in modeled network" }
+    }, opts);
+  }
+  const chosen = safe[0];
+  if (!chosen) {
+    const margins = fuelChecks.map((check) => (check.error ? `${check.airport} no route` : `${check.airport} ${check.fuelMarginMinutes} min`)).join(", ");
+    return finish(flight, closedAirports, {
+      ...standardFields(flight, "hold_for_human_review"),
+      plan: { reason: `Destination ${flight.destination} unavailable and no alternate meets the fuel reserve (fuel margin: ${margins})`, alternateFuelChecks: fuelChecks }
+    }, opts);
+  }
+  return buildReroutePlan(flight, closedAirports, { ...chosen, fuelChecks, excludeTailIds });
+}
+
+export function finish(flight, closedAirports, plan, { excludeTailIds = new Set() } = {}) {
   const comparison = buildComparison({
     flight,
     action: plan.action,
@@ -91,18 +170,10 @@ function finish(flight, closedAirports, plan, { excludeTailIds = new Set() } = {
 export function buildDelayPlan(flight, { delayMinutes, reason, requiredChecks, excludeTailIds = new Set(), holdAfterReject = false } = {}) {
   const aircraft = fleet.find((item) => item.id === flight.aircraftId);
   if (holdAfterReject) {
-    return finish(flight, [], {
-      flightId: flight.id, callsign: flight.callsign, aircraft: flight.aircraftId, passengers: flight.passengers,
-      action: "hold_for_human_review", approvalStatus: "pending", generatedAt: new Date().toISOString(),
-      routeContext: { origin: airport(flight.origin), originalDestination: airport(flight.destination), currentPosition: flight.position || airport(flight.origin) },
-      requiredChecks: requiredChecks || ["Prior recovery plan was rejected; dispatcher builds a manual option"],
-      plan: { reason: reason || `Prior plan rejected for ${flight.id}; holding for human recovery` }
-    }, { excludeTailIds });
+    return buildHoldPlan(flight, { reason: reason || `Prior plan rejected for ${flight.id}; holding for human recovery`, requiredChecks, excludeTailIds });
   }
   return finish(flight, [], {
-    flightId: flight.id, callsign: flight.callsign, aircraft: flight.aircraftId, passengers: flight.passengers,
-    action: "delay", approvalStatus: "pending", generatedAt: new Date().toISOString(),
-    routeContext: { origin: airport(flight.origin), originalDestination: airport(flight.destination), currentPosition: flight.position || airport(flight.origin) },
+    ...standardFields(flight, "delay"),
     requiredChecks: requiredChecks || [
       "Dispatcher validates NOTAM, weather, ETOPS/performance, crew duty and traffic-flow constraints",
       "ATC and airport operations acceptance required before execution"

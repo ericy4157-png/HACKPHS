@@ -8,7 +8,11 @@ import { simulateDisaster } from "./simulation.js";
 import { createOpsSession } from "./opsSession.js";
 import { toUiFlight, toUiFlights, toUiIncident } from "./uiApi.js";
 
-const uiFlightScope = (url) => (url.searchParams.get("scope") === "active" ? "active" : undefined);
+const uiFlightScope = (url) => {
+  const scope = url.searchParams.get("scope");
+  if (scope === "active" || scope === "roster") return scope;
+  return undefined;
+};
 
 const incidents = [];
 const session = createOpsSession();
@@ -84,7 +88,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && uiDecisionMatch) {
       const flightId = decodeURIComponent(uiDecisionMatch[1]);
       const input = await readJson(req);
-      const snapshot = session.decide(flightId, uiDecisionMatch[2], input.decidedBy);
+      const snapshot = session.decide(flightId, uiDecisionMatch[2], input.decidedBy, { planId: input.planId });
       if (!snapshot) return send(res, 404, { error: "No recovery plan for this flight in the current scenario" });
       operationalSnapshot = snapshot;
       syncQueue();
@@ -97,7 +101,8 @@ const server = http.createServer(async (req, res) => {
         flight,
         flights: uiFlights,
         incident: toUiIncident(operationalSnapshot),
-        notice: "Decision recorded only; dispatch/ATC execution is intentionally not automated."
+        notice: "Decision recorded only; dispatch/ATC execution is intentionally not automated.",
+        changedFlightIds: snapshot.changedFlightIds || []
       });
     }
     if (req.method === "GET" && url.pathname === "/v1/integrations/opensky/states") return send(res, 200, await pullOpenSkyStates());

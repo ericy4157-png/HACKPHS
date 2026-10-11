@@ -86,7 +86,46 @@ export type Flight = {
   planRevision?: number;
   /** Why this pending plan was rebuilt after a tick or another decision. */
   supersededReason?: string;
+  /** Additive roster fields for the spreadsheet. */
+  aircraftId?: string | null;
+  aircraftType?: string | null;
+  departureAt?: string | null;
+  arrivalAt?: string | null;
+  blockMinutes?: number | null;
+  refuelMinutes?: number;
+  nextRefuel?: { flightId: string; minutes: number; departureAt: string } | null;
+  fuel?: {
+    departureKg: number;
+    arrivalKg: number;
+    reserveKg: number;
+    onboardKgNow: number | null;
+  } | null;
+  fuelMinutes?: number;
+  legNumber?: number | null;
+  tripsOnTail?: number;
+  rotationId?: string | null;
+  opsStatus?: string;
+  /** Passenger-delay cost of the current plan (additive). */
+  passengerMinutes?: number;
+  /** One-line label for the futures picker. */
+  label?: string;
+  /** Sibling legal futures; only on pending recovery rows. */
+  alternatives?: FlightAlternative[];
 };
+
+export type FlightAlternative = {
+  planId: string;
+  action?: Flight["action"];
+  delayMinutes?: number;
+  proposedPath?: LatLng[];
+  proposedRoute?: string;
+  passengerMinutes?: number;
+  label?: string;
+  layers?: RecoveryLayer[];
+  aircraft?: Flight["aircraft"];
+};
+
+export type AppPage = "dashboard" | "network" | "sheet";
 
 export type RecoveryLayer = {
   index: number;
@@ -147,6 +186,8 @@ export type DecisionResult = {
   /** Full list after replan (butterfly updates). */
   flights?: Flight[];
   incident?: Incident;
+  /** Other flights whose pending plans were rewritten by this decision. */
+  changedFlightIds?: string[];
 };
 
 export type ScenarioSnapshot = {

@@ -23,10 +23,10 @@ function formatSimClock(iso?: string, simMinutes?: number): string {
 export function IncidentRail({ incident, flights, onNextScenario, advancing }: Props) {
   if (!incident) {
     return (
-      <aside className="rail rail-left">
+      <div className="rail-stack">
         <p className="rail-kicker">Incident</p>
         <h2 className="rail-title">Awaiting signal…</h2>
-      </aside>
+      </div>
     );
   }
 
@@ -35,7 +35,7 @@ export function IncidentRail({ incident, flights, onNextScenario, advancing }: P
   const pct = Math.round(incident.recoveryProgress * 100);
 
   return (
-    <aside className="rail rail-left">
+    <div className="rail-stack">
       <p className="rail-kicker">
         {incident.baseline
           ? "Network status"
@@ -94,6 +94,6 @@ export function IncidentRail({ incident, flights, onNextScenario, advancing }: P
       </div>
 
       {incident.notice && <p className="rail-footnote">{incident.notice}</p>}
-    </aside>
+    </div>
   );
 }

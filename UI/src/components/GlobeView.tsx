@@ -9,6 +9,10 @@ type Props = {
   mode: SkyMode;
   /** Where to frame the camera when the incident changes; defaults to CONUS. */
   focus: { lat: number; lng: number } | null;
+  /** False on the dashboard so wheel scroll can carry the story, not zoom the globe. */
+  interactive?: boolean;
+  /** Flights whose plans just rewrote after a decision. */
+  changedIds?: string[];
 };
 
 // Served from UI/public: three-globe keeps the whole scene hidden until the globe texture loads.
@@ -16,7 +20,8 @@ const EARTH_DAY = "/textures/earth-blue-marble.jpg";
 const EARTH_NIGHT = "/textures/earth-night.jpg";
 const BUMP = "/textures/earth-topology.png";
 
-function statusColor(status: Flight["status"], selected: boolean): string {
+function statusColor(status: Flight["status"], selected: boolean, changed = false): string {
+  if (changed && !selected) return "#ff8a5b";
   if (selected) return "#ffe08a";
   switch (status) {
     case "rerouted":
@@ -75,9 +80,10 @@ function buildArcs(flights: Flight[], selectedId: string | null): ArcDatum[] {
   return arcs;
 }
 
-function buildPoints(flights: Flight[], selectedId: string | null): PointDatum[] {
+function buildPoints(flights: Flight[], selectedId: string | null, changedIds: Set<string>): PointDatum[] {
   return flights.map((f) => {
     const selected = f.id === selectedId;
+    const changed = changedIds.has(f.id);
     return {
       id: f.id,
       flightId: f.id,
@@ -85,8 +91,8 @@ function buildPoints(flights: Flight[], selectedId: string | null): PointDatum[]
       lng: f.lng,
       callsign: f.callsign,
       status: f.status,
-      size: selected ? 0.55 : 0.28,
-      color: statusColor(f.status, selected),
+      size: selected ? 0.55 : changed ? 0.48 : 0.28,
+      color: statusColor(f.status, selected, changed),
     };
   });
 }
@@ -102,7 +108,7 @@ function affectedAirports(flights: Flight[]): Airport[] {
   return [...byCode.values()];
 }
 
-export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props) {
+export function GlobeView({ flights, selectedId, onSelect, mode, focus, interactive = true, changedIds = [] }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const globeRef = useRef<GlobeMethods | undefined>(undefined);
   const [size, setSize] = useState({ w: 800, h: 600 });
@@ -130,16 +136,19 @@ export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props)
     () => (arcsReady ? buildArcs(flights, selectedId) : []),
     [flights, selectedId, arcsReady],
   );
-  const points = useMemo(() => buildPoints(flights, selectedId), [flights, selectedId]);
+  const changed = useMemo(() => new Set(changedIds), [changedIds]);
+  const points = useMemo(() => buildPoints(flights, selectedId, changed), [flights, selectedId, changed]);
   const airports = useMemo(() => affectedAirports(flights), [flights]);
+  const pulsePoints = useMemo(() => points.filter((p) => changed.has(p.flightId)), [points, changed]);
 
   useEffect(() => {
     const g = globeRef.current;
     if (!g) return;
-    g.controls().autoRotate = !selectedId;
+    g.controls().autoRotate = interactive && !selectedId;
     g.controls().autoRotateSpeed = 0.35;
     g.controls().enableDamping = true;
-  }, [selectedId, size.w]);
+    g.controls().enableZoom = false;
+  }, [selectedId, size.w, interactive]);
 
   useEffect(() => {
     const g = globeRef.current;
@@ -158,11 +167,12 @@ export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props)
   }, [focusLat, focusLng]);
 
   return (
-    <div className="globe-stage" ref={wrapRef}>
+    <div className="globe-stage" ref={wrapRef} data-interactive={interactive}>
       <Globe
         ref={globeRef}
         width={size.w}
         height={size.h}
+        enablePointerInteraction={interactive}
         backgroundColor="rgba(0,0,0,0)"
         globeImageUrl={mode === "night" ? EARTH_NIGHT : EARTH_DAY}
         bumpImageUrl={BUMP}
@@ -191,7 +201,7 @@ export function GlobeView({ flights, selectedId, onSelect, mode, focus }: Props)
           const pt = p as PointDatum;
           onSelect(pt.flightId === selectedId ? null : pt.flightId);
         }}
-        ringsData={airports}
+        ringsData={pulsePoints.length ? [...airports, ...pulsePoints] : airports}
         ringLat="lat"
         ringLng="lng"
         ringColor={() => (mode === "night" ? "rgba(255,180,100,0.55)" : "rgba(255,120,80,0.45)")}

@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 import type { Flight } from "../types";
-import { ACTION_LABEL } from "../flightLabels";
+import { ACTION_LABEL, needsDecision } from "../flightLabels";
 
 export type ListFilter = "needs_decision" | "decided" | "all";
 
@@ -8,6 +8,7 @@ type Props = {
   flights: Flight[];
   query: string;
   filter: ListFilter;
+  changedIds?: string[];
   onQueryChange: (query: string) => void;
   onFilterChange: (filter: ListFilter) => void;
   onSelect: (flightId: string) => void;
@@ -18,10 +19,6 @@ const FILTERS: { value: ListFilter; label: string }[] = [
   { value: "needs_decision", label: "To decide" },
   { value: "decided", label: "Decided" },
 ];
-
-function needsDecision(flight: Flight): boolean {
-  return flight.status !== "ok" && (flight.approvalStatus === undefined || flight.approvalStatus === "pending");
-}
 
 function matchesFilter(flight: Flight, filter: ListFilter): boolean {
   if (filter === "all") return true;
@@ -43,7 +40,8 @@ function rowStatusLabel(flight: Flight): string {
 }
 
 /** Selection rail shown when no flight is selected: a searchable, filterable list of flights. */
-export function FlightListRail({ flights, query, filter, onQueryChange, onFilterChange, onSelect }: Props) {
+export function FlightListRail({ flights, query, filter, changedIds = [], onQueryChange, onFilterChange, onSelect }: Props) {
+  const changed = useMemo(() => new Set(changedIds), [changedIds]);
   // Undecided plans first, then decided plans, then on-schedule flights; within each, most passengers first.
   const visible = useMemo(
     () =>
@@ -61,9 +59,8 @@ export function FlightListRail({ flights, query, filter, onQueryChange, onFilter
   );
 
   return (
-    <aside className="rail rail-right">
+    <div className="rail-stack">
       <div>
-        <p className="rail-kicker">Selection</p>
         <h2 className="rail-title">Flights</h2>
       </div>
 
@@ -97,7 +94,7 @@ export function FlightListRail({ flights, query, filter, onQueryChange, onFilter
         <ul className="flight-list">
           {visible.map((flight) => (
             <li key={flight.id}>
-              <button className="flight-row" onClick={() => onSelect(flight.id)}>
+              <button className="flight-row" data-changed={changed.has(flight.id)} onClick={() => onSelect(flight.id)}>
                 <span className="flight-row-main">
                   <span className="flight-row-callsign">{flight.callsign}</span>
                   <span className="flight-row-route">
@@ -119,6 +116,6 @@ export function FlightListRail({ flights, query, filter, onQueryChange, onFilter
       <p className="rail-footnote">
         {visible.length} of {flights.length} flights · or click a marker on the globe
       </p>
-    </aside>
+    </div>
   );
 }
