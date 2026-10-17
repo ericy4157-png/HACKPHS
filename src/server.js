@@ -1,24 +1,53 @@
 import http from "node:http";
 import { readFile } from "node:fs/promises";
+import { OPS_TICK_WALL_MS } from "./aircraftPerformance.js";
 import { airports, flights, restrictedZones } from "./data.js";
 import { planReroute } from "./routing.js";
 import { operationalNetwork, pullOpenSkyStates } from "./network.js";
 import { simulateDisaster } from "./simulation.js";
-import { buildOperationalSnapshot } from "./scenarios.js";
-import { decideFlight, toUiFlights, toUiIncident } from "./uiApi.js";
+import { createOpsSession } from "./opsSession.js";
+import { toUiFlight, toUiFlights, toUiIncident } from "./uiApi.js";
+
+const uiFlightScope = (url) => {
+  const scope = url.searchParams.get("scope");
+  if (scope === "active" || scope === "roster") return scope;
+  return undefined;
+};
 
 const incidents = [];
-let refreshNumber = 0;
-let operationalSnapshot = buildOperationalSnapshot(refreshNumber);
+const session = createOpsSession();
+let operationalSnapshot = session.loadBaseline();
 const approvalQueue = [...operationalSnapshot.plans];
+
+const syncQueue = () => {
+  approvalQueue.length = 0;
+  approvalQueue.push(...operationalSnapshot.plans);
+};
+
 const advanceScenario = () => {
-  refreshNumber += 1;
-  operationalSnapshot = buildOperationalSnapshot(refreshNumber);
-  approvalQueue.length = 0; approvalQueue.push(...operationalSnapshot.plans);
+  operationalSnapshot = session.advanceScenario();
+  syncQueue();
   return operationalSnapshot;
 };
-const send = (res, status, body) => { res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" }); res.end(JSON.stringify(body)); };
-const readJson = async (req) => new Promise((resolve, reject) => { let body = ""; req.on("data", (chunk) => body += chunk); req.on("end", () => { try { resolve(body ? JSON.parse(body) : {}); } catch { reject(new Error("Invalid JSON")); } }); });
+
+const applyTick = () => {
+  operationalSnapshot = session.tick();
+  syncQueue();
+  return operationalSnapshot;
+};
+
+const send = (res, status, body) => {
+  res.writeHead(status, { "content-type": "application/json", "access-control-allow-origin": "*" });
+  res.end(JSON.stringify(body));
+};
+const readJson = async (req) => new Promise((resolve, reject) => {
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    try { resolve(body ? JSON.parse(body) : {}); }
+    catch { reject(new Error("Invalid JSON")); }
+  });
+});
 
 const server = http.createServer(async (req, res) => {
   try {
@@ -36,23 +65,45 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/v1/dashboard/refresh") return send(res, 200, advanceScenario());
     // Globe UI contract (UI/src/api/client.ts).
     if (req.method === "GET" && url.pathname === "/api/incident") return send(res, 200, toUiIncident(operationalSnapshot));
-    if (req.method === "GET" && url.pathname === "/api/flights") return send(res, 200, toUiFlights(operationalSnapshot));
+    if (req.method === "GET" && url.pathname === "/api/flights") {
+      if (url.searchParams.get("advance") === "1") applyTick();
+      return send(res, 200, toUiFlights(operationalSnapshot, { scope: uiFlightScope(url) }));
+    }
+    if (req.method === "POST" && url.pathname === "/api/tick") {
+      const snapshot = applyTick();
+      const scope = uiFlightScope(url);
+      return send(res, 200, { incident: toUiIncident(snapshot), flights: toUiFlights(snapshot, { scope }) });
+    }
     if (req.method === "POST" && url.pathname === "/api/scenario/next") {
       const snapshot = advanceScenario();
-      return send(res, 200, { incident: toUiIncident(snapshot), flights: toUiFlights(snapshot) });
+      const scope = uiFlightScope(url);
+      return send(res, 200, { incident: toUiIncident(snapshot), flights: toUiFlights(snapshot, { scope }) });
     }
     const uiFlightMatch = url.pathname.match(/^\/api\/flights\/([^/]+)$/);
     if (req.method === "GET" && uiFlightMatch) {
-      const flight = toUiFlights(operationalSnapshot).find((item) => item.id === decodeURIComponent(uiFlightMatch[1]));
+      const flight = toUiFlight(operationalSnapshot, decodeURIComponent(uiFlightMatch[1]));
       return flight ? send(res, 200, flight) : send(res, 404, { error: "Unknown flight" });
     }
     const uiDecisionMatch = url.pathname.match(/^\/api\/flights\/([^/]+)\/(accept|reject)$/);
     if (req.method === "POST" && uiDecisionMatch) {
       const flightId = decodeURIComponent(uiDecisionMatch[1]);
       const input = await readJson(req);
-      const flight = decideFlight(operationalSnapshot, flightId, uiDecisionMatch[2], input.decidedBy);
-      if (!flight) return send(res, 404, { error: "No recovery plan for this flight in the current scenario" });
-      return send(res, 200, { ok: true, flightId, flight, incident: toUiIncident(operationalSnapshot), notice: "Decision recorded only; dispatch/ATC execution is intentionally not automated." });
+      const snapshot = session.decide(flightId, uiDecisionMatch[2], input.decidedBy, { planId: input.planId });
+      if (!snapshot) return send(res, 404, { error: "No recovery plan for this flight in the current scenario" });
+      operationalSnapshot = snapshot;
+      syncQueue();
+      const scope = uiFlightScope(url);
+      const uiFlights = toUiFlights(operationalSnapshot, { scope: scope || "active" });
+      const flight = uiFlights.find((item) => item.id === flightId) || toUiFlight(operationalSnapshot, flightId);
+      return send(res, 200, {
+        ok: true,
+        flightId,
+        flight,
+        flights: uiFlights,
+        incident: toUiIncident(operationalSnapshot),
+        notice: "Decision recorded only; dispatch/ATC execution is intentionally not automated.",
+        changedFlightIds: snapshot.changedFlightIds || []
+      });
     }
     if (req.method === "GET" && url.pathname === "/v1/integrations/opensky/states") return send(res, 200, await pullOpenSkyStates());
     if (req.method === "GET" && url.pathname === "/v1/airspace/restrictions") return send(res, 200, { restrictions: restrictedZones });
@@ -71,7 +122,6 @@ const server = http.createServer(async (req, res) => {
       if (incident.type === "airport_closed") airport.status = "closed";
       const stored = { id: `INC-${Date.now()}`, createdAt: new Date().toISOString(), active: true, ...incident };
       incidents.unshift(stored);
-      // This is the live-style workflow: create approval items automatically, but never execute them.
       const pipeline = incident.type === "airport_closed" ? simulateDisaster({ airport: incident.airport, radiusNm: 1, severity: incident.severity || "moderate", type: incident.reason || "airport closure" }) : null;
       if (pipeline) approvalQueue.unshift(...pipeline.plans);
       return send(res, 201, { incident: stored, generatedApprovalPlans: pipeline?.plans.length || 0 });
@@ -98,5 +148,14 @@ const server = http.createServer(async (req, res) => {
   } catch (error) { return send(res, 400, { error: error.message }); }
 });
 
-if (process.env.NODE_ENV !== "test") server.listen(process.env.PORT || 3000, () => console.log("Skyward API listening on :3000"));
-export { server };
+let tickTimer = null;
+if (process.env.NODE_ENV !== "test") {
+  server.listen(process.env.PORT || 3000, () => console.log(`Skyward API listening on :${server.address().port}`));
+  tickTimer = setInterval(() => {
+    try { applyTick(); }
+    catch (error) { console.error("ops tick failed", error); }
+  }, OPS_TICK_WALL_MS);
+  tickTimer.unref?.();
+}
+
+export { server, session };

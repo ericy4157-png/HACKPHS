@@ -11,6 +11,8 @@ npm run dev
 
 The API runs at `http://localhost:3000` with no external dependencies.
 
+Airport coordinates and runway lengths come from a committed OurAirports snapshot (`data/reference/airports.json`); rebuild it with `npm run build:reference`. See [DATA_SOURCES.md](DATA_SOURCES.md). The current-state handoff is [docs/Skyward_Handoff.md](docs/Skyward_Handoff.md).
+
 The main product UI is the 3D globe in [`UI/`](UI/README.md). With the API running, start it with `cd UI && npm install && npm run dev` and open `http://localhost:5173`; it proxies `/api` to this server.
 
 Open `http://localhost:3000` to use the included zero-input operational dashboard. It evaluates a synthetic network of 32 major airports automatically; **Refresh operational picture** advances the benchmark dataset to its next seeded disruption scenario and regenerates the review queue. Your teammate can replace the visual layer while keeping the API contract.
